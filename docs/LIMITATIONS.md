@@ -41,5 +41,6 @@ The proposal document and demonstration video referenced in the brief were not a
 - **Offline operation** of the gate interface is not supported; the gate needs network access to the server.
 - **Localization:** English only.
 - **Camera QR scanning** depends on browser support and secure context; the simulated scanner and manual entry remain available.
+- **Manual reference entry** accepts sequential references (e.g. `VR-2026-00042`) in place of the signed QR; it is recorded as a separate method but should be restricted by policy before operational use.
 - **Cross-location visitor identity search** is limited to visitors with visits in the user's own locations, so the same person may be registered separately at two locations.
 - The prototype is **not security-certified or approved for operational use**.
