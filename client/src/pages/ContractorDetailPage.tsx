@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Pencil, RefreshCcw } from 'lucide-react';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import { BROWSER_EDITION } from '../lib/edition';
 import { fmtDate, fmtDateTime, todayLocal } from '../lib/format';
 import type { Row } from '../lib/types';
 import { CONTRACTOR_CATEGORY_LABEL, type ContractorCategory } from '../../../shared/constants';
@@ -182,7 +183,7 @@ export default function ContractorDetailPage() {
           </>
         }
       >
-        <p className="text-sm text-ink-2">The current QR code stops working immediately. Print or share the new pass with the contractor. This action is audited.</p>
+        <p className="text-sm text-ink-2">The current QR code stops working immediately. {BROWSER_EDITION ? 'Save' : 'Print'} or share the new pass with the contractor. This action is audited.</p>
       </Modal>
     </>
   );

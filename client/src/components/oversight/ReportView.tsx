@@ -1,8 +1,9 @@
-import { useMemo, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Download, FileBarChart2, Printer } from 'lucide-react';
 import { api, downloadCsv, errorMessage } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
+import { BROWSER_EDITION, useCanSaveFiles } from '../../lib/edition';
 import { useLocationScope } from '../../lib/location';
 import { useListParams } from '../../lib/useListParams';
 import { fmtDate, fmtDateTime } from '../../lib/format';
@@ -37,7 +38,7 @@ export function useReportDefinitions() {
   return useQuery({ queryKey: ['reports', 'definitions'], queryFn: () => api.get<ReportDefinition[]>('/reports'), staleTime: 300_000 });
 }
 
-/** Generic report viewer: URL-backed filters, sorting, pagination, CSV export and print. */
+/** Generic report viewer: URL-backed filters, sorting, pagination, CSV export and print (standard edition). */
 export function ReportView({ reportKey, header }: { reportKey: string; header: (def: ReportDefinition | undefined, actions: ReactNode) => ReactNode }) {
   const { can } = useAuth();
   const toast = useToast();
@@ -74,25 +75,33 @@ export function ReportView({ reportKey, header }: { reportKey: string; header: (
     label: selectedLocation ? g.name : `${g.name} (${locationName(g.locationId)})`,
   }));
 
+  const canSaveFiles = useCanSaveFiles();
+  const [exporting, setExporting] = useState(false);
   const exportCsv = async () => {
+    setExporting(true);
     try {
-      const rows = await downloadCsv(`/reports/${reportKey}/export`, filters);
-      toast.success(`Exported ${rows.toLocaleString('en-IN')} rows to CSV`);
+      const { rows, result } = await downloadCsv(`/reports/${reportKey}/export`, filters);
+      // The viewer declined the save: nothing to report.
+      if (result === 'saved') toast.success(`Exported ${rows.toLocaleString('en-IN')} rows to CSV`);
     } catch (e) {
       toast.error(errorMessage(e));
+    } finally {
+      setExporting(false);
     }
   };
 
   const actions = (
     <>
-      {can('reports.export') && (
-        <Button icon={<Download className="size-4" />} onClick={exportCsv} disabled={!def}>
+      {can('reports.export') && canSaveFiles && (
+        <Button icon={<Download className="size-4" />} onClick={exportCsv} loading={exporting} disabled={!def}>
           Export CSV
         </Button>
       )}
-      <Button icon={<Printer className="size-4" />} onClick={() => window.print()} disabled={!def}>
-        Print / PDF
-      </Button>
+      {!BROWSER_EDITION && (
+        <Button icon={<Printer className="size-4" />} onClick={() => window.print()} disabled={!def}>
+          Print / PDF
+        </Button>
+      )}
     </>
   );
 

@@ -3,6 +3,7 @@ import { ArrowRight, ClipboardList, FileBarChart2, Package, ShieldCheck, UserChe
 import { Card, ErrorState, PageHeader, Spinner } from '../components/ui';
 import { useReportDefinitions } from '../components/oversight/ReportView';
 import { useAuth } from '../lib/auth';
+import { BROWSER_EDITION } from '../lib/edition';
 
 const GROUP_ORDER = ['Movement', 'Visitors', 'Access', 'Deliveries', 'Gate operations', 'Administration'];
 const GROUP_ICON: Record<string, typeof Users> = {
@@ -21,11 +22,19 @@ export default function ReportsPage() {
   if (q.isError) return <ErrorState error={q.error} onRetry={() => q.refetch()} />;
   const defs = q.data ?? [];
   const groups = GROUP_ORDER.map((g) => ({ group: g, items: defs.filter((d) => d.group === g) })).filter((g) => g.items.length);
+  // The browser edition cannot print; CSV export goes through the viewer's file saving.
+  const outputs = BROWSER_EDITION
+    ? can('reports.export')
+      ? 'Every report exports to CSV.'
+      : ''
+    : can('reports.export')
+      ? 'Every report exports to CSV and prints to PDF.'
+      : 'Print any report to PDF from your browser.';
   return (
     <>
       <PageHeader
         title="Reports"
-        subtitle={`Filterable, sortable reports calculated from the same records as the dashboard. ${can('reports.export') ? 'Every report exports to CSV and prints to PDF.' : 'Print any report to PDF from your browser.'} Results respect your role and location permissions.`}
+        subtitle={['Filterable, sortable reports calculated from the same records as the dashboard.', outputs, 'Results respect your role and location permissions.'].filter(Boolean).join(' ')}
       />
       <div className="space-y-8">
         {groups.map(({ group, items }) => {

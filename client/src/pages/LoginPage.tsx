@@ -3,9 +3,11 @@ import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowRight, Lock, ShieldCheck } from 'lucide-react';
 import { api, errorMessage } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import { clearLastPath } from '../lib/browserRouting';
+import { BROWSER_EDITION, browserHost } from '../lib/edition';
 import { Wordmark, LogoMark } from '../components/Logo';
 import { DemoBanner } from '../components/layout/AppShell';
-import { Avatar, Button, Input, Notice, cx } from '../components/ui';
+import { Avatar, Button, Input, Modal, Notice, cx } from '../components/ui';
 import { homeFor } from '../App';
 import type { RoleCode } from '../../../shared/constants';
 
@@ -27,6 +29,10 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
+  const [startOverOpen, setStartOverOpen] = useState(false);
+  const [startingOver, setStartingOver] = useState(false);
+  const [startOverError, setStartOverError] = useState<string | null>(null);
+  const host = browserHost();
 
   if (me) return <Navigate to={sp.get('next') ?? homeFor((p) => can(p))} replace />;
 
@@ -59,6 +65,21 @@ export default function LoginPage() {
       setError(errorMessage(err));
     } finally {
       setBusy(null);
+    }
+  };
+
+  /** Browser edition: erase this device's saved demo data and reload into a freshly generated dataset. */
+  const startOver = async () => {
+    if (!host) return;
+    setStartingOver(true);
+    setStartOverError(null);
+    try {
+      clearLastPath();
+      await host.resetLocalData();
+      window.location.reload();
+    } catch (err) {
+      setStartOverError(errorMessage(err));
+      setStartingOver(false);
     }
   };
 
@@ -163,9 +184,48 @@ export default function LoginPage() {
                 </p>
               )}
             </form>
+            {BROWSER_EDITION && host && (
+              <div className="mt-4 text-center">
+                <button
+                  type="button"
+                  className="text-[13px] font-medium text-forest-700 underline-offset-2 hover:text-forest-900 hover:underline"
+                  onClick={() => {
+                    setStartOverError(null);
+                    setStartOverOpen(true);
+                  }}
+                >
+                  Start over with fresh demo data
+                </button>
+              </div>
+            )}
           </div>
         </section>
       </div>
+      <Modal
+        open={startOverOpen}
+        onClose={() => !startingOver && setStartOverOpen(false)}
+        size="sm"
+        title="Start over with fresh demo data?"
+        footer={
+          <>
+            <Button data-autofocus disabled={startingOver} onClick={() => setStartOverOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="danger" loading={startingOver} onClick={startOver}>
+              Erase and start over
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-ink-2">
+          This erases the demo data saved in this browser, including anything you added or changed, and reloads the page with a freshly generated synthetic dataset.
+        </p>
+        {startOverError && (
+          <Notice tone="danger" className="mt-3">
+            {startOverError}
+          </Notice>
+        )}
+      </Modal>
     </div>
   );
 }

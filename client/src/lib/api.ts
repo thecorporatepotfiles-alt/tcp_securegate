@@ -1,3 +1,5 @@
+import { saveFile, type SaveResult } from './edition';
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -57,8 +59,8 @@ export const api = {
   put: <T>(path: string, body: unknown) => request<T>('PUT', path, body),
 };
 
-/** Download a CSV export through an authenticated fetch. */
-export async function downloadCsv(path: string, query?: Query): Promise<number> {
+/** Download a CSV export through an authenticated fetch and hand it to the edition's file saver. */
+export async function downloadCsv(path: string, query?: Query): Promise<{ rows: number; result: SaveResult }> {
   const res = await fetch(`/api${path}${toQuery(query)}`, { credentials: 'same-origin' });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
@@ -66,15 +68,8 @@ export async function downloadCsv(path: string, query?: Query): Promise<number> 
   }
   const blob = await res.blob();
   const name = /filename="([^"]+)"/.exec(res.headers.get('content-disposition') ?? '')?.[1] ?? 'export.csv';
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = name;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-  return Number(res.headers.get('x-row-count') ?? 0);
+  const result = await saveFile({ filename: name, data: blob, mimeType: 'text/csv' });
+  return { rows: Number(res.headers.get('x-row-count') ?? 0), result };
 }
 
 export interface Page<T> {

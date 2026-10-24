@@ -1,13 +1,18 @@
-import { useState, type ReactNode } from 'react';
-import { Copy, Printer } from 'lucide-react';
+import { useRef, useState, type ReactNode } from 'react';
+import { Copy, ImageDown, Printer } from 'lucide-react';
+import { errorMessage } from '../../lib/api';
+import { BROWSER_EDITION, saveFile, useCanSaveFiles } from '../../lib/edition';
 import { fmtDateTime } from '../../lib/format';
+import { fileSafe, passQrPng } from '../../lib/qrImage';
+import { useToast } from '../toast';
 import { LogoMark } from '../Logo';
 import { Button, Notice, cx } from '../ui';
 import { SimulatedTag } from '../status';
 
 /**
  * Printable digital pass with a QR code. The QR holds only an opaque signed
- * token; verification always happens on the server.
+ * token; verification always happens on the server. The QR can also be saved
+ * as a PNG (the browser edition cannot print).
  */
 export function PassCard({
   kind,
@@ -33,7 +38,45 @@ export function PassCard({
   footer?: ReactNode;
 }) {
   const [showCode, setShowCode] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [copy, setCopy] = useState<'idle' | 'copied' | 'manual'>('idle');
+  const [savingQr, setSavingQr] = useState(false);
+  const codeRef = useRef<HTMLElement>(null);
+  const canSaveFiles = useCanSaveFiles();
+  const toast = useToast();
+
+  const saveQr = async () => {
+    if (!token) return;
+    setSavingQr(true);
+    try {
+      const png = await passQrPng(token, reference);
+      const result = await saveFile({ filename: `pass-${fileSafe(reference)}.png`, data: png, mimeType: 'image/png' });
+      if (result === 'saved') toast.success('QR image saved');
+    } catch (e) {
+      toast.error(errorMessage(e));
+    } finally {
+      setSavingQr(false);
+    }
+  };
+
+  const copyCode = async () => {
+    if (!token) return;
+    try {
+      await navigator.clipboard.writeText(token);
+      setCopy('copied');
+      setTimeout(() => setCopy('idle'), 1500);
+    } catch {
+      // Clipboard access can be blocked (e.g. inside an embedded frame): select the code for a manual copy.
+      setCopy('manual');
+      const el = codeRef.current;
+      const sel = window.getSelection();
+      if (el && sel) {
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+    }
+  };
   return (
     <div>
       <div className="print-pass mx-auto max-w-md overflow-hidden rounded-2xl border border-line bg-white shadow-[var(--shadow-card)]">
@@ -77,9 +120,16 @@ export function PassCard({
         {footer}
       </div>
       <div className="no-print mx-auto mt-3 flex max-w-md flex-wrap items-center justify-center gap-2">
-        <Button size="sm" icon={<Printer className="size-4" />} onClick={() => window.print()}>
-          Print pass
-        </Button>
+        {!BROWSER_EDITION && (
+          <Button size="sm" icon={<Printer className="size-4" />} onClick={() => window.print()}>
+            Print pass
+          </Button>
+        )}
+        {token && canSaveFiles && (
+          <Button size="sm" icon={<ImageDown className="size-4" />} loading={savingQr} onClick={saveQr}>
+            Save QR image
+          </Button>
+        )}
         {token && (
           <Button size="sm" variant="ghost" onClick={() => setShowCode((v) => !v)}>
             {showCode ? 'Hide test code' : 'Show code for testing'}
@@ -90,23 +140,14 @@ export function PassCard({
         <div className="no-print mx-auto mt-2 max-w-md">
           <Notice tone="info" title="Opaque pass code (demo testing only)">
             <div className="mt-1 flex items-center gap-2">
-              <code className={cx('min-w-0 flex-1 truncate rounded bg-white px-2 py-1 font-mono text-[11px] text-ink-2')}>{token}</code>
-              <Button
-                size="sm"
-                icon={<Copy className="size-3.5" />}
-                onClick={async () => {
-                  try {
-                    await navigator.clipboard.writeText(token);
-                    setCopied(true);
-                    setTimeout(() => setCopied(false), 1500);
-                  } catch {
-                    setCopied(false);
-                  }
-                }}
-              >
-                {copied ? 'Copied' : 'Copy'}
+              <code ref={codeRef} className={cx('min-w-0 flex-1 rounded bg-white px-2 py-1 font-mono text-[11px] text-ink-2', copy === 'manual' ? 'break-all' : 'truncate')}>
+                {token}
+              </code>
+              <Button size="sm" icon={<Copy className="size-3.5" />} onClick={copyCode}>
+                {copy === 'copied' ? 'Copied' : 'Copy'}
               </Button>
             </div>
+            {copy === 'manual' && <div className="mt-1 text-xs font-medium text-ink">Copying is blocked here — the code is selected; copy it with your keyboard or long-press.</div>}
             <div className="mt-1 text-xs">Contains no personal data. Paste into the gate's manual entry to simulate a scan.</div>
           </Notice>
         </div>

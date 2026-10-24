@@ -31,6 +31,8 @@ export default function RolesPage() {
   const [role, setRole] = useState<RoleCode>('HQ_ADMIN');
   const [draft, setDraft] = useState<Set<Permission>>(new Set());
   const [confirm, setConfirm] = useState(false);
+  /** Role the user tried to switch to while edits were unsaved. */
+  const [pendingRole, setPendingRole] = useState<RoleCode | null>(null);
   const current = q.data?.roles.find((r) => r.code === role);
 
   useEffect(() => {
@@ -69,8 +71,9 @@ export default function RolesPage() {
       <Tabs
         value={role}
         onChange={(v) => {
-          if (dirty && !window.confirm('Discard unsaved permission changes?')) return;
-          setRole(v);
+          if (v === role) return;
+          if (dirty) setPendingRole(v);
+          else setRole(v);
         }}
         tabs={roles.map((r) => ({ value: r.code, label: r.name, count: r.permissions.length }))}
       />
@@ -150,6 +153,30 @@ export default function RolesPage() {
           </div>
         </div>
       )}
+      <Modal
+        open={pendingRole !== null}
+        onClose={() => setPendingRole(null)}
+        size="sm"
+        title="Discard unsaved permission changes?"
+        footer={
+          <>
+            <Button data-autofocus onClick={() => setPendingRole(null)}>
+              Keep editing
+            </Button>
+            <Button
+              variant="danger"
+              onClick={() => {
+                if (pendingRole) setRole(pendingRole);
+                setPendingRole(null);
+              }}
+            >
+              Discard changes
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-ink-2">Your changes to {current?.name ?? 'this role'} have not been saved. Discarding them keeps the role’s saved permissions.</p>
+      </Modal>
       <Modal
         open={confirm}
         onClose={() => setConfirm(false)}

@@ -35,6 +35,7 @@ import {
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
+import { BROWSER_EDITION, browserEditionNote } from '../../lib/edition';
 import { useLocationScope } from '../../lib/location';
 import { fmtRelative } from '../../lib/format';
 import type { Permission } from '../../../../shared/constants';
@@ -111,6 +112,7 @@ export function DemoBanner() {
     <div className="no-print bg-gold-400 px-4 py-1.5 text-center text-[12px] font-medium text-forest-950" role="note">
       <span className="mr-2 rounded bg-forest-950/90 px-1.5 py-0.5 text-[10px] font-bold tracking-widest text-gold-300 uppercase">Demo</span>
       {config.demoBanner}
+      {BROWSER_EDITION && <div className="mt-0.5 text-[11.5px] font-normal text-forest-950/85">{browserEditionNote()}</div>}
     </div>
   );
 }
