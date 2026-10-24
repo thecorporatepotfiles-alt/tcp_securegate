@@ -75,9 +75,10 @@ export function orderBy(
   allowed: Record<string, string>,
   fallback: string,
 ): string {
-  const expr = sort && allowed[sort] ? allowed[sort] : fallback;
+  // The fallback carries its own direction; a requested direction applies only to a whitelisted sort key.
+  if (!sort || !allowed[sort]) return fallback;
   const direction = dir === 'asc' ? 'ASC' : dir === 'desc' ? 'DESC' : '';
-  return direction ? `${expr} ${direction}` : expr;
+  return direction ? `${allowed[sort]} ${direction}` : allowed[sort];
 }
 
 export function likeParam(q: string): string {

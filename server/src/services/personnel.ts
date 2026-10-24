@@ -62,9 +62,9 @@ export function listPersonnel(ctx: Ctx, raw: unknown): Page<Record<string, unkno
   if (q.q) {
     const like = likeParam(q.q);
     where.push(
-      "(p.full_name LIKE ? ESCAPE '\\' OR p.service_number LIKE ? ESCAPE '\\' OR p.unit LIKE ? ESCAPE '\\' OR p.department LIKE ? ESCAPE '\\' OR EXISTS (SELECT 1 FROM credentials c WHERE c.personnel_id = p.id AND c.credential_number = ?))",
+      "(p.full_name LIKE ? ESCAPE '\\' OR p.service_number LIKE ? ESCAPE '\\' OR p.unit LIKE ? ESCAPE '\\' OR p.department LIKE ? ESCAPE '\\' OR p.id IN (SELECT c.personnel_id FROM credentials c WHERE c.organization_id = ? AND c.credential_number = ?))",
     );
-    params.push(like, like, like, like, q.q);
+    params.push(like, like, like, like, ctx.actor.orgId, q.q);
   }
   const whereSql = where.join(' AND ');
   const order = orderBy(

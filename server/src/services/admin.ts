@@ -273,7 +273,12 @@ export function updateRolePermissions(ctx: Ctx, role: string, body: unknown) {
 // ---------------------------------------------------------------------------
 
 export function listLocations(ctx: Ctx) {
-  const scope = sqlIn('l.id', ctx.actor.locationIds);
+  // System administrators also see inactive locations so they can reactivate them.
+  const ids =
+    ctx.actor.role === 'SYSTEM_ADMIN'
+      ? (ctx.db.prepare('SELECT id FROM locations WHERE organization_id = ?').all(ctx.actor.orgId) as { id: number }[]).map((r) => r.id)
+      : ctx.actor.locationIds;
+  const scope = sqlIn('l.id', ids);
   const locations = ctx.db
     .prepare(
       `SELECT l.id, l.code, l.name, l.kind, l.address_note AS addressNote, l.is_active AS isActive,
@@ -283,8 +288,8 @@ export function listLocations(ctx: Ctx) {
     )
     .all(ctx.actor.orgId, ...scope.params) as Record<string, any>[];
   const gates = ctx.db
-    .prepare(`SELECT g.id, g.location_id AS locationId, g.code, g.name, g.gate_type AS gateType, g.is_active AS isActive FROM gates g WHERE ${sqlIn('g.location_id', ctx.actor.locationIds).sql} ORDER BY g.name`)
-    .all(...ctx.actor.locationIds) as Record<string, any>[];
+    .prepare(`SELECT g.id, g.location_id AS locationId, g.code, g.name, g.gate_type AS gateType, g.is_active AS isActive FROM gates g WHERE ${sqlIn('g.location_id', ids).sql} ORDER BY g.name`)
+    .all(...ids) as Record<string, any>[];
   return locations.map((l) => ({ ...l, gates: gates.filter((g) => g.locationId === l.id) }));
 }
 
