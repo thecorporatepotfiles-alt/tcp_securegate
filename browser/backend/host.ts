@@ -13,8 +13,9 @@ import { startScheduler } from '../../server/src/services/scheduler.js';
 import { ensureBaseline, seedDemo } from '../../server/src/seed/demo.js';
 import { randomToken } from '../../server/src/lib/crypto.js';
 import { loadSqlEngine, type Engine } from './engine.js';
-import { openSnapshotStore, type Snapshot, type SnapshotStore } from './persistence.js';
-import { CookieJar, installFetchInterceptor, type Dispatch } from './transport.js';
+import { openSnapshotStore, type Snapshot } from './persistence.js';
+import { CookieJar, installFetchInterceptor, type Dispatch, type ServerResponse } from './transport.js';
+import { createTabCoordinator } from './tabs.js';
 
 export interface BrowserHost {
   engine: Engine;
@@ -34,6 +35,18 @@ declare global {
 }
 
 export type BootStep = 'engine' | 'restore' | 'seed' | 'start';
+
+export interface BootOptions {
+  onStep?: (step: BootStep) => void;
+  /** Another tab took over: this tab has saved its data and stopped. */
+  onSuperseded?: () => void;
+}
+
+const SUPERSEDED: ServerResponse = {
+  status: 503,
+  headers: { 'content-type': 'application/json; charset=utf-8' },
+  body: JSON.stringify({ error: { code: 'TAB_SUPERSEDED', message: 'SecureGate is open in another tab. Reload this tab to continue here.' } }),
+};
 
 const DEMO_PERSONNEL = 1200;
 /** Changes made by user actions are saved almost immediately; incidental writes (session activity, scheduled checks) are batched. */
@@ -104,24 +117,26 @@ export function interceptApiRequests(): void {
   installFetchInterceptor(dispatchReady, jar, (method) => afterRequest(method));
 }
 
-export async function bootBrowserBackend(onStep: (step: BootStep) => void = () => {}): Promise<BrowserHost> {
+export async function bootBrowserBackend(options: BootOptions = {}): Promise<BrowserHost> {
   try {
-    return await boot(onStep);
+    return await boot(options);
   } catch (err) {
     rejectDispatch(err);
     throw err;
   }
 }
 
-async function boot(onStep: (step: BootStep) => void): Promise<BrowserHost> {
+async function boot({ onStep = () => {}, onSuperseded = () => {} }: BootOptions): Promise<BrowserHost> {
   onStep('engine');
   await paint();
-  const { SQL, engine } = await loadSqlEngine();
+  const tabs = createTabCoordinator();
+  const [{ SQL, engine }, store] = await Promise.all([loadSqlEngine(), openSnapshotStore()]);
   setSqlJs(SQL);
 
   onStep('restore');
   await paint();
-  const store: SnapshotStore | null = await openSnapshotStore();
+  // Let a tab that is already running save its latest changes before reading them.
+  if (store) await tabs.takeOver();
   let snapshot: Snapshot | null = null;
   let restoreNotice: string | null = null;
   try {
@@ -215,6 +230,19 @@ async function boot(onStep: (step: BootStep) => void): Promise<BrowserHost> {
   if (store && !snapshot) await saveNow();
   else savedChanges = totalChanges();
 
+  let superseded = false;
+  if (store) {
+    tabs.onTakeover(async () => {
+      await saveNow();
+      superseded = true;
+      stopped = true;
+      if (timer) clearTimeout(timer);
+      clearInterval(sweep);
+      stopScheduler();
+      onSuperseded();
+    });
+  }
+
   const host: BrowserHost = {
     engine,
     storage: store ? 'indexeddb' : 'memory',
@@ -232,6 +260,6 @@ async function boot(onStep: (step: BootStep) => void): Promise<BrowserHost> {
     },
   };
   window.__SG_BROWSER__ = host;
-  resolveDispatch((req) => dispatch(app, req));
+  resolveDispatch((req) => (superseded ? Promise.resolve(SUPERSEDED) : dispatch(app, req)));
   return host;
 }

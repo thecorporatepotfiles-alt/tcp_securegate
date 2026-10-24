@@ -5,6 +5,7 @@
 //   npm run build:browser && npm run serve:browser   → http://127.0.0.1:4310
 //
 // Options: --port <n>   --csp strict   (strict = no eval/WebAssembly, no network; exercises the asm.js fallback)
+//          --dir <folder>   (default dist/browser)
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -17,13 +18,14 @@ const opt = (name, fallback) => {
 const port = Number(opt('port', process.env.PORT ?? 4310));
 const csp = opt('csp', 'none');
 
-const content = fs.readFileSync(path.resolve('dist/browser/securegate.html'), 'utf8');
+const dir = path.resolve(opt('dir', 'dist/browser'));
+const content = fs.readFileSync(path.join(dir, 'securegate.html'), 'utf8');
 export const page =
   '<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover">' +
   '<style>*,*::before,*::after{box-sizing:border-box}html,body{margin:0;padding:0}</style></head><body>' +
   content +
   '</body></html>';
-fs.writeFileSync(path.resolve('dist/browser/index.html'), page);
+fs.writeFileSync(path.join(dir, 'index.html'), page);
 
 const STRICT_CSP = [
   "default-src 'none'",

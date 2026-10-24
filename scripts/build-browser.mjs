@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const buildDir = path.resolve('dist/browser-build');
-const outDir = path.resolve('dist/browser');
+const outDir = path.resolve(process.env.SG_BROWSER_OUT_DIR ?? 'dist/browser');
 
 await build({ configFile: path.resolve('vite.browser.config.ts'), logLevel: 'warn' });
 

@@ -85,10 +85,35 @@ function renderFailure(err: unknown) {
   overlay.replaceChildren(wrap);
 }
 
+/** Another tab took over the shared demo data: this tab saved and stopped. */
+function renderSuperseded() {
+  const wrap = el('div', 'sg-splash');
+  wrap.setAttribute('role', 'alertdialog');
+  wrap.setAttribute('aria-labelledby', 'sg-superseded-title');
+  const card = el('div', 'sg-splash-card');
+  const title = el('h1', 'sg-splash-title', 'SecureGate is open in another tab');
+  title.id = 'sg-superseded-title';
+  const msg = el(
+    'p',
+    'sg-splash-sub',
+    'The demo data on this device is used by one tab at a time. Your changes in this tab were saved before the other tab took over.',
+  );
+  const btn = el('button', 'sg-splash-btn', 'Use SecureGate in this tab');
+  btn.type = 'button';
+  btn.addEventListener('click', () => window.location.reload());
+  card.append(title, msg, btn);
+  wrap.append(card);
+  const notice = document.createElement('div');
+  notice.className = 'sg-splash-overlay';
+  notice.append(wrap);
+  document.body.append(notice);
+  btn.focus();
+}
+
 async function start() {
   const list = renderSplash();
   try {
-    await bootBrowserBackend((step) => markStep(list, step));
+    await bootBrowserBackend({ onStep: (step) => markStep(list, step), onSuperseded: renderSuperseded });
   } catch (err) {
     console.error('[securegate] browser edition failed to start', err);
     renderFailure(err);
