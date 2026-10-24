@@ -78,13 +78,16 @@ export function demoSamples(ctx: Ctx, gateId: number): Sample[] {
     if (row) add({ mode: 'PERSONNEL', method: 'MOCK_READER', label: `${label} — ${row.name}`, expected, input: row.n });
   };
   cred(
-    `c.status = 'ACTIVE' AND c.is_temporary = 0 AND p.status = 'ACTIVE' AND EXISTS (SELECT 1 FROM personnel_locations pl WHERE pl.personnel_id = p.id AND pl.location_id = ?)
+    `c.status = 'ACTIVE' AND c.is_temporary = 0 AND p.status = 'ACTIVE' AND (p.access_valid_until IS NULL OR p.access_valid_until >= ?)
+     AND (p.access_valid_from IS NULL OR p.access_valid_from <= ?) AND EXISTS (SELECT 1 FROM personnel_locations pl WHERE pl.personnel_id = p.id AND pl.location_id = ?)
      AND NOT EXISTS (SELECT 1 FROM presence pr WHERE pr.subject_type = 'PERSONNEL' AND pr.subject_id = p.id AND pr.state = 'INSIDE')`,
-    'Active card (outside)', 'Verified (entry)', gate.location_id,
+    'Active card (outside)', 'Verified (entry)', today, today, gate.location_id,
   );
   cred(
-    `c.status = 'ACTIVE' AND p.status = 'ACTIVE' AND EXISTS (SELECT 1 FROM presence pr WHERE pr.subject_type = 'PERSONNEL' AND pr.subject_id = p.id AND pr.state = 'INSIDE' AND pr.location_id = ?)`,
-    'Active card (inside)', 'Verified (exit)', gate.location_id,
+    `c.status = 'ACTIVE' AND p.status = 'ACTIVE' AND (p.access_valid_until IS NULL OR p.access_valid_until >= ?)
+     AND EXISTS (SELECT 1 FROM presence pr WHERE pr.subject_type = 'PERSONNEL' AND pr.subject_id = p.id AND pr.state = 'INSIDE' AND pr.location_id = ?)
+     AND EXISTS (SELECT 1 FROM personnel_locations pl WHERE pl.personnel_id = p.id AND pl.location_id = ?)`,
+    'Active card (inside)', 'Verified (exit)', today, gate.location_id, gate.location_id,
   );
   cred("c.status = 'BLOCKED'", 'Blocked card', 'Blocked Credential');
   cred("c.status = 'LOST'", 'Card reported lost', 'Credential Reported Lost');

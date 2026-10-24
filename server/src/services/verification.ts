@@ -89,6 +89,8 @@ const EXIT_PERMITTED_ON: ResultCode[] = [
   'REVOKED_ACCESS',
   'CANCELLED_PASS',
   'MANUAL_REVIEW_REQUIRED',
+  // Recorded inside here (e.g. admitted on temporary access or after review): leaving is still recordable.
+  'WRONG_LOCATION',
 ];
 
 const ALERT_FOR_RESULT: Partial<Record<ResultCode, AlertType>> = {

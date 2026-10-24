@@ -4,7 +4,7 @@ import { assertInScope, can, requirePerm, sqlIn } from '../auth/context.js';
 import { clock } from '../clock.js';
 import { badRequest, conflict, forbidden, notFound } from '../lib/errors.js';
 import { hashPassword } from '../lib/crypto.js';
-import { likeParam, listQuery, parse, zOptText, zText, type Page } from '../lib/http.js';
+import { likeParam, listQuery, parse, parsePatch, zOptText, zText, type Page } from '../lib/http.js';
 import { audit } from './audit.js';
 import { invalidatePermissionCache } from '../auth/permissions.js';
 import { revokeUserSessions } from '../auth/sessions.js';
@@ -157,7 +157,7 @@ const updateUserSchema = userSchema.omit({ username: true, password: true }).par
 
 export function updateUser(ctx: Ctx, id: number, body: unknown) {
   requirePerm(ctx.actor, 'users.manage');
-  const input = parse(updateUserSchema, body);
+  const input = parsePatch(updateUserSchema, body);
   return ctx.db.transaction(() => {
     const u = loadManagedUser(ctx, id);
     if (id === ctx.actor.userId && (input.isActive === false || (input.role && input.role !== u.role))) {
@@ -315,7 +315,7 @@ export function createLocation(ctx: Ctx, body: unknown) {
 export function updateLocation(ctx: Ctx, id: number, body: unknown) {
   requirePerm(ctx.actor, 'locations.manage');
   if (ctx.actor.role !== 'SYSTEM_ADMIN') throw forbidden('Only a System Administrator can edit locations.');
-  const input = parse(locationSchema.omit({ code: true }).partial(), body);
+  const input = parsePatch(locationSchema.omit({ code: true }).partial(), body);
   return ctx.db.transaction(() => {
     const l = ctx.db.prepare('SELECT * FROM locations WHERE id = ? AND organization_id = ?').get(id, ctx.actor.orgId) as Record<string, any> | undefined;
     if (!l) throw notFound('Location');
@@ -353,7 +353,7 @@ export function createGate(ctx: Ctx, body: unknown) {
 
 export function updateGate(ctx: Ctx, id: number, body: unknown) {
   requirePerm(ctx.actor, 'locations.manage');
-  const input = parse(gateSchema.omit({ code: true, locationId: true }).partial(), body);
+  const input = parsePatch(gateSchema.omit({ code: true, locationId: true }).partial(), body);
   return ctx.db.transaction(() => {
     const g = ctx.db.prepare('SELECT g.*, l.organization_id FROM gates g JOIN locations l ON l.id = g.location_id WHERE g.id = ?').get(id) as Record<string, any> | undefined;
     if (!g || g.organization_id !== ctx.actor.orgId) throw notFound('Gate');

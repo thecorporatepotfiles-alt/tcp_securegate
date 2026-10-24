@@ -6,7 +6,7 @@ import { clock } from '../clock.js';
 import { badRequest, conflict, notFound, unprocessable } from '../lib/errors.js';
 import { makeAccessToken, newNonce } from '../lib/crypto.js';
 import { localDate } from '../lib/time.js';
-import { likeParam, listQuery, orderBy, parse, zDate, zEmail, zIso, zOptText, zPhone, zText, zTime, type Page } from '../lib/http.js';
+import { likeParam, listQuery, orderBy, parse, parsePatch, zDate, zEmail, zIso, zOptText, zPhone, zText, zTime, type Page } from '../lib/http.js';
 import { nextRef, REF } from '../lib/refs.js';
 import { audit } from './audit.js';
 import { subjectHistory } from './movement.js';
@@ -75,7 +75,7 @@ export function createCompany(ctx: Ctx, body: unknown) {
 
 export function updateCompany(ctx: Ctx, id: number, body: unknown) {
   requirePerm(ctx.actor, 'contractors.manage');
-  const input = parse(companySchema.partial(), body);
+  const input = parsePatch(companySchema.partial(), body);
   return ctx.db.transaction(() => {
     const existing = ctx.db.prepare('SELECT * FROM contractor_companies WHERE id = ? AND organization_id = ?').get(id, ctx.actor.orgId) as Record<string, any> | undefined;
     if (!existing) throw notFound('Organization');
@@ -263,7 +263,7 @@ export function createContractor(ctx: Ctx, body: unknown) {
 
 export function updateContractor(ctx: Ctx, id: number, body: unknown) {
   requirePerm(ctx.actor, 'contractors.manage');
-  const input = parse(contractorSchema.partial().extend({ status: z.enum(['ACTIVE', 'INACTIVE', 'CANCELLED']).optional(), statusReason: zOptText(500) }), body);
+  const input = parsePatch(contractorSchema.partial().extend({ status: z.enum(['ACTIVE', 'INACTIVE', 'CANCELLED']).optional(), statusReason: zOptText(500) }), body);
   return ctx.db.transaction(() => {
     const c = loadContractor(ctx, id);
     if (input.locationId) assertInScope(ctx.actor, input.locationId, 'Location');

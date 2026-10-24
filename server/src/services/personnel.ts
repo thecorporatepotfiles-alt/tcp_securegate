@@ -4,7 +4,7 @@ import type { Ctx } from '../auth/context.js';
 import { assertInScope, can, requirePerm, scopeIds, sqlIn } from '../auth/context.js';
 import { clock } from '../clock.js';
 import { badRequest, conflict, notFound, unprocessable } from '../lib/errors.js';
-import { likeParam, listQuery, orderBy, parse, zOptDate, zOptText, zText, type Page } from '../lib/http.js';
+import { likeParam, listQuery, orderBy, parse, parsePatch, zOptDate, zOptText, zText, type Page } from '../lib/http.js';
 import { maskIdentifier } from '../lib/sanitize.js';
 import { audit } from './audit.js';
 import { getPresence, subjectHistory } from './movement.js';
@@ -188,7 +188,7 @@ const updateSchema = personnelSchema.omit({ serviceNumber: true }).partial();
 
 export function updatePersonnel(ctx: Ctx, id: number, body: unknown) {
   requirePerm(ctx.actor, 'personnel.manage');
-  const input = parse(updateSchema, body);
+  const input = parsePatch(updateSchema, body);
   return ctx.db.transaction(() => {
     const existing = loadPersonnel(ctx, id);
     assertInScope(ctx.actor, existing.locationId, 'Personnel record');

@@ -83,3 +83,14 @@ export function orderBy(
 export function likeParam(q: string): string {
   return `%${q.replace(/[\\%_]/g, (m) => `\\${m}`)}%`;
 }
+
+/**
+ * Parse a partial update. Zod applies `.default()` values even inside
+ * `.partial()`, which would silently reset omitted fields; only keys the
+ * client actually sent are kept.
+ */
+export function parsePatch<T extends z.ZodType>(schema: T, data: unknown): Partial<z.infer<T>> {
+  const parsed = parse(schema, data) as Record<string, unknown>;
+  const sent = new Set(data && typeof data === 'object' ? Object.keys(data as object) : []);
+  return Object.fromEntries(Object.entries(parsed).filter(([k]) => sent.has(k))) as Partial<z.infer<T>>;
+}

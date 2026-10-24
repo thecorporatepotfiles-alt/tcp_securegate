@@ -3,7 +3,7 @@ import type { Ctx } from '../auth/context.js';
 import { assertInScope, can, requirePerm, scopeIds, sqlIn } from '../auth/context.js';
 import { clock } from '../clock.js';
 import { badRequest, conflict, notFound } from '../lib/errors.js';
-import { likeParam, listQuery, orderBy, parse, zOptDate, zOptText, type Page } from '../lib/http.js';
+import { likeParam, listQuery, orderBy, parse, parsePatch, zOptDate, zOptText, type Page } from '../lib/http.js';
 import { audit } from './audit.js';
 import { getPresence, subjectHistory } from './movement.js';
 import { getSettings } from './settings.js';
@@ -193,7 +193,7 @@ const updateSchema = vehicleSchema.partial().extend({ reason: zOptText(500) });
 
 export function updateVehicle(ctx: Ctx, id: number, body: unknown) {
   requirePerm(ctx.actor, 'vehicles.manage');
-  const input = parse(updateSchema, body);
+  const input = parsePatch(updateSchema, body);
   return ctx.db.transaction(() => {
     const existing = loadVehicle(ctx, id);
     assertInScope(ctx.actor, existing.locationId, 'Vehicle');
