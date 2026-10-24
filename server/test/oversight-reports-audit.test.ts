@@ -228,3 +228,15 @@ describe('seed, persistence & demo reset (scenarios 24 & 28)', () => {
     expect(verifyAuditChain(env.db).ok).toBe(true);
   });
 });
+
+describe('CSV export file name', () => {
+  it('is stamped with the local date in the configured time zone', async () => {
+    env.db.close();
+    // 01:30 on 25 October in Asia/Kolkata is still 24 October in UTC.
+    env = setup({ at: '2026-10-24T20:00:00.000Z' });
+    const admin = await env.as('admin');
+    const csv = await admin.get('/reports/daily-movement/export', { from: '2026-10-25', to: '2026-10-25' });
+    expect(csv.status).toBe(200);
+    expect(csv.headers['content-disposition']).toContain('securegate-daily-movement-2026-10-25.csv');
+  });
+});

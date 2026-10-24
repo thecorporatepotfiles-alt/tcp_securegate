@@ -2,7 +2,8 @@ import { z } from 'zod';
 import type { Ctx } from '../auth/context.js';
 import { can, requirePerm, scopeIds, sqlIn } from '../auth/context.js';
 import { notFound } from '../lib/errors.js';
-import { dateRangeToUtc } from '../lib/time.js';
+import { dateRangeToUtc, localDate } from '../lib/time.js';
+import { clock } from '../clock.js';
 import { likeParam, parse, zDate } from '../lib/http.js';
 import { toCsv } from '../lib/csv.js';
 import { audit } from './audit.js';
@@ -553,7 +554,7 @@ export function exportReportCsv(ctx: Ctx, key: string, raw: unknown): { filename
   const { sql, params, order } = buildQuery(ctx, def, q);
   const rows = ctx.db.prepare(`${sql} ORDER BY ${order}, r.id DESC LIMIT ${EXPORT_LIMIT}`).all(...params) as Record<string, unknown>[];
   const csv = toCsv(def.columns, rows);
-  const stamp = new Date().toISOString().slice(0, 10);
+  const stamp = localDate(clock.now(), ctx.config.timezone);
   audit(ctx, {
     action: 'report.export',
     entityType: 'report',
