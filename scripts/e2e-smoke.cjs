@@ -42,6 +42,20 @@ const ADMIN_PAGES = [
   '/admin/users', '/admin/roles', '/admin/locations', '/admin/settings', '/admin/system',
 ];
 
+const DETAIL_SOURCES = [
+  ['/personnel?pageSize=1', '/personnel'],
+  ['/credentials?pageSize=1', '/credentials'],
+  ['/visits?pageSize=1&status=APPROVED', '/visitors'],
+  ['/contractors?pageSize=1', '/contractors/people'],
+  ['/temporary-access?pageSize=1', '/temporary-access'],
+  ['/vehicles?pageSize=1', '/vehicles'],
+  ['/deliveries?pageSize=1', '/deliveries'],
+  ['/alerts?pageSize=1', '/alerts'],
+  ['/exceptions?pageSize=1', '/exceptions'],
+  ['/events?pageSize=1', '/events'],
+  ['/personnel?pageSize=1', '/personnel', '/edit'],
+];
+
 async function waitForServer() {
   for (let i = 0; i < 60; i++) {
     try {
@@ -85,7 +99,16 @@ async function main() {
       await page.getByRole('button', { name: /System Administrator/ }).first().click();
       await page.waitForURL(/\/dashboard/, { timeout: 15000 });
 
-      for (const route of ADMIN_PAGES) {
+      // Detail pages: open the first record of each module.
+      const detailRoutes = [];
+      for (const [api, route, path] of DETAIL_SOURCES) {
+        const res = await page.request.get(`${BASE}/api${api}`);
+        const body = await res.json().catch(() => ({}));
+        const first = (body.items ?? body)[0];
+        if (first?.id) detailRoutes.push(`${route}/${first.id}${path ?? ''}`);
+      }
+
+      for (const route of [...ADMIN_PAGES, ...detailRoutes]) {
         errors.length = 0;
         await page.goto(`${BASE}${route}`);
         await page.waitForLoadState('networkidle').catch(() => undefined);

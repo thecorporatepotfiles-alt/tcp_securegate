@@ -8,6 +8,7 @@ import { nextRef, REF } from '../lib/refs.js';
 import { audit } from './audit.js';
 import { notify } from './notifications.js';
 import { loadGate } from './verification.js';
+import { userAtLocation } from './userScope.js';
 import {
   DELIVERY_AWAITING_COMPLETION,
   EXCEPTION_CATEGORIES,
@@ -104,8 +105,8 @@ export function createException(ctx: Ctx, body: unknown) {
   requirePerm(ctx.actor, 'exceptions.manage');
   const input = parse(createSchema, body);
   assertInScope(ctx.actor, input.locationId, 'Location');
-  if (input.responsibleUserId && !ctx.db.prepare('SELECT 1 FROM users WHERE id = ? AND organization_id = ? AND is_active = 1').get(input.responsibleUserId, ctx.actor.orgId)) {
-    throw badRequest('Responsible user is not an active user');
+  if (input.responsibleUserId && !userAtLocation(ctx.db, ctx.actor.orgId, input.responsibleUserId, input.locationId)) {
+    throw badRequest('Responsible user must be an active user at this location');
   }
   return ctx.db.transaction(() => {
     const reference = nextRef(ctx.db, ctx.actor.orgId, REF.EXCEPTION);
@@ -204,6 +205,9 @@ export function assignException(ctx: Ctx, id: number, body: unknown) {
   return ctx.db.transaction(() => {
     const x = loadException(ctx, id);
     if (x.status === 'RESOLVED') throw conflict('Resolved exceptions cannot be reassigned.', 'RESOLVED');
+    if (input.responsibleUserId && !userAtLocation(ctx.db, ctx.actor.orgId, input.responsibleUserId, x.locationId)) {
+      throw badRequest('Responsible user must be an active user at this location');
+    }
     ctx.db.prepare('UPDATE admin_exceptions SET responsible_role = ?, responsible_user_id = ?, updated_at = ? WHERE id = ?').run(
       input.responsibleRole ?? null,
       input.responsibleUserId ?? null,
@@ -271,6 +275,9 @@ export function recordHandover(ctx: Ctx, body: unknown) {
     if (gate.location_id !== input.locationId) throw badRequest('Gate does not belong to the selected location');
   }
   if (input.handedOverTo === ctx.actor.userId) throw badRequest('Select the incoming user, not yourself');
+  if (input.handedOverTo && !userAtLocation(ctx.db, ctx.actor.orgId, input.handedOverTo, input.locationId)) {
+    throw badRequest('The incoming user must be an active user at this location');
+  }
   return ctx.db.transaction(() => {
     const summary = handoverSummary(ctx, input.locationId);
     const reference = nextRef(ctx.db, ctx.actor.orgId, REF.HANDOVER);

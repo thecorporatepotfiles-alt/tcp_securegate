@@ -51,7 +51,7 @@ See **[docs/DEMO_GUIDE.md](docs/DEMO_GUIDE.md)** for a scripted 15-minute walkth
 | `npm run dev` | API (tsx watch) + Vite dev server |
 | `npm run build` | Production build: `dist/client` + `dist/server` |
 | `npm start` | Run the built server (serves the client too) |
-| `npm test` | 87 automated API/business-logic tests (Vitest + Supertest) |
+| `npm test` | 101 automated API/business-logic tests (Vitest + Supertest) |
 | `npm run typecheck` | TypeScript checks for server and client |
 | `npm run e2e` | Browser smoke test + responsive screenshots (requires Playwright/Chromium) |
 | `npm run db:migrate` | Apply SQL migrations |

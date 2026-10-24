@@ -250,21 +250,20 @@ const createSchema = z.object({
 export function resolveVisitor(db: DB, actor: Actor, visitorId: number | undefined, visitor: z.infer<typeof visitorInput> | undefined): number {
   const now = clock.nowIso();
   if (visitorId) {
+    const vis = visibilityFilter(actor);
     const known = db
       .prepare(
         `SELECT vr.id FROM visitors vr WHERE vr.id = ? AND vr.organization_id = ?
-         AND EXISTS (SELECT 1 FROM visits v WHERE v.visitor_id = vr.id AND v.location_id IN (${actor.locationIds.map(() => '?').join(',') || 'NULL'}))`,
+         AND EXISTS (SELECT 1 FROM visits v WHERE v.visitor_id = vr.id AND v.location_id IN (${actor.locationIds.map(() => '?').join(',') || 'NULL'}) AND ${vis.sql})`,
       )
-      .get(visitorId, actor.orgId, ...actor.locationIds);
+      .get(visitorId, actor.orgId, ...actor.locationIds, ...vis.params);
     if (!known) throw notFound('Visitor');
     if (visitor) {
-      db.prepare('UPDATE visitors SET company = COALESCE(?, company), phone = COALESCE(?, phone), email = COALESCE(?, email), updated_at = ? WHERE id = ?').run(
-        visitor.company,
-        visitor.phone,
-        visitor.email,
-        now,
-        visitorId,
-      );
+      // Visitor administrators may correct details; other requesters may only fill in missing ones.
+      const sql = can(actor, 'visitors.manage')
+        ? 'UPDATE visitors SET company = COALESCE(?, company), phone = COALESCE(?, phone), email = COALESCE(?, email), updated_at = ? WHERE id = ?'
+        : 'UPDATE visitors SET company = COALESCE(company, ?), phone = COALESCE(phone, ?), email = COALESCE(email, ?), updated_at = ? WHERE id = ?';
+      db.prepare(sql).run(visitor.company, visitor.phone, visitor.email, now, visitorId);
     }
     return visitorId;
   }
@@ -327,7 +326,8 @@ export function createVisit(ctx: Ctx, body: unknown) {
       : null;
     const reference = nextRef(db, actor.orgId, REF.VISIT);
     const now = clock.nowIso();
-    const requiresCheck = input.requiresSecurityCheck ?? settings['visit.requireSecurityCheck'];
+    // A requester may add the security-verification step but never waive the organization-wide requirement.
+    const requiresCheck = settings['visit.requireSecurityCheck'] || input.requiresSecurityCheck === true;
     const info = db
       .prepare(
         `INSERT INTO visits (organization_id, reference, location_id, visitor_id, source, host_user_id, host_department, approving_officer_id,
@@ -838,17 +838,20 @@ export function searchVisitors(ctx: Ctx, q: string) {
   const like = likeParam(q.trim());
   const ids = ctx.actor.locationIds;
   if (!ids.length) return [];
+  // Only visitors reachable through visits this user may open are searchable.
+  const vis = visibilityFilter(ctx.actor);
+  const inScope = `v.visitor_id = vr.id AND v.location_id IN (${ids.map(() => '?').join(',')}) AND ${vis.sql}`;
   return ctx.db
     .prepare(
       `SELECT vr.id, vr.full_name AS fullName, vr.company, vr.phone, vr.email,
-              (SELECT MAX(v.visit_date) FROM visits v WHERE v.visitor_id = vr.id) AS lastVisit,
-              (SELECT COUNT(*) FROM visits v WHERE v.visitor_id = vr.id) AS visitCount
+              (SELECT MAX(v.visit_date) FROM visits v WHERE ${inScope}) AS lastVisit,
+              (SELECT COUNT(*) FROM visits v WHERE ${inScope}) AS visitCount
        FROM visitors vr WHERE vr.organization_id = ?
          AND (vr.full_name LIKE ? ESCAPE '\\' OR vr.phone LIKE ? ESCAPE '\\' OR vr.company LIKE ? ESCAPE '\\')
-         AND EXISTS (SELECT 1 FROM visits v WHERE v.visitor_id = vr.id AND v.location_id IN (${ids.map(() => '?').join(',')}))
+         AND EXISTS (SELECT 1 FROM visits v WHERE ${inScope})
        ORDER BY vr.full_name LIMIT 10`,
     )
-    .all(ctx.actor.orgId, like, like, like, ...ids);
+    .all(...ids, ...vis.params, ...ids, ...vis.params, ctx.actor.orgId, like, like, like, ...ids, ...vis.params);
 }
 
 export type { VisitStatus };

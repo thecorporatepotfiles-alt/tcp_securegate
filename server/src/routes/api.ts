@@ -178,7 +178,7 @@ export function apiRoutes(db: DB, config: AppConfig, gateLimiter: RateLimiter): 
       .prepare(
         `SELECT id, created_at AS createdAt, actor_username AS actor, actor_role AS actorRole, action, outcome, metadata
          FROM audit_events WHERE organization_id = ? AND entity_type = ? AND entity_id = ?
-         AND (location_id IS NULL OR location_id IN (${ids.map(() => '?').join(',') || 'NULL'})) ORDER BY id DESC LIMIT 100`,
+         AND (${ctx.actor.allLocations ? 'location_id IS NULL OR ' : ''}location_id IN (${ids.map(() => '?').join(',') || 'NULL'})) ORDER BY id DESC LIMIT 100`,
       )
       .all(ctx.actor.orgId, q.entityType, q.entityId, ...ids);
   });

@@ -54,6 +54,14 @@ describe('scenario 26: each role can complete its permitted workflow', () => {
     expect(Object.keys(label).length).toBeGreaterThan(10);
   });
 
+  it('list endpoints accept a sort direction without a sort key (regression)', async () => {
+    const admin = await env.as('admin');
+    for (const p of ['/personnel', '/credentials', '/visits', '/vehicles', '/deliveries', '/contractors', '/temporary-access', '/alerts', '/exceptions', '/events', '/presence', '/admin/users']) {
+      expect((await admin.get(p, { dir: 'asc' })).status, p).toBe(200);
+      expect((await admin.get(p, { sort: 'not-a-column', dir: 'desc' })).status, p).toBe(200);
+    }
+  });
+
   it('host workflow: create a visitor request for an approving officer', async () => {
     const host = await env.as('alpha.host');
     const approvers = await host.get('/lookups/approvers', { locationId: locationId(env.db, 'LOC-A') });

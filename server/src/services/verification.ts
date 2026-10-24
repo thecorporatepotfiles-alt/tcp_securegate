@@ -639,7 +639,7 @@ export function verify(ctx: Ctx, body: unknown) {
         input.mode,
         method,
         fingerprint,
-        input.mode === 'VEHICLE' ? normalizePlate(raw) : maskIdentifier(raw),
+        input.mode === 'VEHICLE' && !isToken ? normalizePlate(raw) : maskIdentifier(raw),
         r.result,
         r.subjectType ?? null,
         r.subjectId ?? null,

@@ -38,6 +38,10 @@ This prototype applies secure-by-default engineering, but it **has not been pene
 - `npm audit` reported 0 known vulnerabilities at the time of writing (zod and vitest were upgraded to patched versions).
 - Run `npm audit` and update dependencies before any deployment.
 
+## Review
+
+The server code was independently reviewed for authorization and data-exposure issues; all confirmed findings were fixed and covered by regression tests (see [TESTING.md](TESTING.md#independent-security-review)). This is not a substitute for a professional penetration test.
+
 ## Known gaps before operational use
 
 - TLS termination and certificate management (deploy behind an approved reverse proxy).
@@ -45,4 +49,5 @@ This prototype applies secure-by-default engineering, but it **has not been pene
 - Centralized logging/SIEM export, log retention and monitoring.
 - Shared session and rate-limit stores for multi-node deployments.
 - Formal threat model, penetration test and accreditation.
+- Manual reference entry (typing a visit/contractor/temporary-access reference instead of scanning the signed QR) is enabled for demonstrations; references are sequential and should be disabled or restricted by policy for operational use.
 - Data-retention and archival policy enforcement.

@@ -262,6 +262,33 @@ export function eventSummary(db: DB, id: number) {
     .get(id) as Record<string, unknown>;
 }
 
+function revalidateForEntry(db: DB, attempt: AttemptRow): void {
+  const now = clock.nowIso();
+  const changed = (what: string) => conflict(`${what} changed after verification. Verify again.`, 'RECORD_CHANGED');
+  if (attempt.credential_id) {
+    const c = db.prepare('SELECT status, valid_until FROM credentials WHERE id = ?').get(attempt.credential_id) as { status: string; valid_until: string | null };
+    if (c.status !== 'ACTIVE' || (c.valid_until && c.valid_until <= now)) throw changed('The credential');
+  }
+  if (attempt.subject_type === 'PERSONNEL') {
+    const p = db.prepare('SELECT status FROM personnel WHERE id = ?').get(attempt.subject_id) as { status: string };
+    if (p.status !== 'ACTIVE') throw changed('The personnel record');
+  }
+  if (attempt.subject_type === 'CONTRACTOR') {
+    const c = db
+      .prepare('SELECT c.status, cc.status AS company_status FROM contractors c JOIN contractor_companies cc ON cc.id = c.company_id WHERE c.id = ?')
+      .get(attempt.subject_id) as { status: string; company_status: string };
+    if (c.status !== 'ACTIVE' || c.company_status !== 'ACTIVE') throw changed('The contractor record');
+  }
+  if (attempt.temporary_access_id) {
+    const t = db.prepare('SELECT status, valid_until FROM temporary_access WHERE id = ?').get(attempt.temporary_access_id) as { status: string; valid_until: string };
+    if (t.status !== 'ACTIVE' || t.valid_until <= now) throw changed('The temporary access');
+  }
+  if (attempt.subject_type === 'VEHICLE') {
+    const v = db.prepare('SELECT authorization_status AS s FROM vehicles WHERE id = ?').get(attempt.subject_id) as { s: string };
+    if (v.s === 'BLOCKED') throw changed('The vehicle authorization');
+  }
+}
+
 export function recordMovement(ctx: Ctx, body: unknown) {
   requirePerm(ctx.actor, 'gate.operate');
   const input = parse(recordSchema, body);
@@ -374,6 +401,10 @@ export function recordMovement(ctx: Ctx, body: unknown) {
       const d = db.prepare('SELECT status FROM deliveries WHERE id = ?').get(subjectId) as { status: string };
       if (d.status !== 'AUTHORIZED') throw conflict('The delivery is not authorized to proceed.', 'DELIVERY_STATE');
     }
+    // A record blocked or deactivated after a successful verification must not be admitted.
+    if (input.eventType === 'ENTRY' && !viaReview) revalidateForEntry(db, attempt);
+    if ((input.linkedSubjectType == null) !== (input.linkedSubjectId == null)) throw badRequest('linkedSubjectType and linkedSubjectId must be provided together');
+    if (input.linkedSubjectType && input.linkedSubjectId) assertSubjectExists(db, actor.orgId, input.linkedSubjectType, input.linkedSubjectId);
 
     const event = insertMovementEvent(db, {
       orgId: actor.orgId,
@@ -521,9 +552,19 @@ export function recordMissingEvent(ctx: Ctx, body: unknown) {
     assertInScope(actor, gate.location_id, 'Gate');
     if (new Date(input.reportedOccurredAt).getTime() > clock.nowMs()) throw badRequest('The reported time cannot be in the future.');
     assertSubjectExists(db, actor.orgId, input.subjectType, input.subjectId);
+    // The subject must belong to one of the corrector's locations, and the
+    // correction must be recorded at a location the subject is associated with.
+    const subjectLocs = subjectLocationIds(db, input.subjectType, input.subjectId);
+    if (!subjectLocs.some((l) => actor.locationIds.includes(l))) throw notFound('Subject');
     const presence = getPresence(db, input.subjectType, input.subjectId);
-    if (input.eventType === 'EXIT' && presence?.state !== 'INSIDE') throw conflict('Subject is not recorded inside; a missing exit cannot be added.', 'NOT_INSIDE');
-    if (input.eventType === 'ENTRY' && presence?.state === 'INSIDE') throw conflict('Subject is already recorded inside.', 'ALREADY_INSIDE');
+    if (input.eventType === 'EXIT') {
+      if (presence?.state !== 'INSIDE') throw conflict('Subject is not recorded inside; a missing exit cannot be added.', 'NOT_INSIDE');
+      if (presence.location_id !== gate.location_id) throw conflict(`Subject is recorded inside at ${locationName(db, presence.location_id)}; record the exit at a gate of that location.`, 'INSIDE_ELSEWHERE');
+    }
+    if (input.eventType === 'ENTRY') {
+      if (presence?.state === 'INSIDE') throw conflict('Subject is already recorded inside.', 'ALREADY_INSIDE');
+      if (!subjectLocs.includes(gate.location_id)) throw unprocessable('This record is not associated with the selected gate’s location.', 'WRONG_LOCATION');
+    }
     const ref = nextRef(db, actor.orgId, REF.CORRECTION);
     const now = clock.nowIso();
     const corr = db
@@ -560,6 +601,25 @@ export function recordMissingEvent(ctx: Ctx, body: unknown) {
     });
     return { reference: ref, event: eventSummary(db, event.id) };
   })();
+}
+
+/** Locations a subject is associated with (assigned/authorized/registered). */
+export function subjectLocationIds(db: DB, type: SubjectType, id: number): number[] {
+  const ids = (sql: string) => (db.prepare(sql).all(id) as { l: number }[]).map((r) => r.l);
+  switch (type) {
+    case 'PERSONNEL':
+      return (db.prepare('SELECT location_id AS l FROM personnel_locations WHERE personnel_id = ? UNION SELECT primary_location_id AS l FROM personnel WHERE id = ?').all(id, id) as { l: number }[]).map((r) => r.l);
+    case 'VISITOR':
+      return ids('SELECT location_id AS l FROM visits WHERE id = ?');
+    case 'CONTRACTOR':
+      return ids('SELECT location_id AS l FROM contractors WHERE id = ?');
+    case 'TEMPORARY':
+      return ids('SELECT location_id AS l FROM temporary_access WHERE id = ?');
+    case 'DELIVERY':
+      return ids('SELECT location_id AS l FROM deliveries WHERE id = ?');
+    case 'VEHICLE':
+      return (db.prepare('SELECT registered_location_id AS l FROM vehicles WHERE id = ? UNION SELECT location_id AS l FROM vehicle_locations WHERE vehicle_id = ?').all(id, id) as { l: number }[]).map((r) => r.l);
+  }
 }
 
 export function assertSubjectExists(db: DB, orgId: number, type: SubjectType, id: number): void {

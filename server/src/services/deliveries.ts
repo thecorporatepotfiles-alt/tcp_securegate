@@ -13,6 +13,7 @@ import { setDeliveryStatus, type DeliveryRow } from './visitStatus.js';
 import { getPresence, recordMovement, subjectHistory } from './movement.js';
 import { loadGate, verify } from './verification.js';
 import { findOrCreateVehicle } from './vehicles.js';
+import { userAtLocation } from './userScope.js';
 import { DELIVERY_AWAITING_COMPLETION, DELIVERY_STATUSES, DELIVERY_STATUS_INFO } from '../../../shared/constants.js';
 
 const DELIVERY_SELECT = `SELECT d.id, d.reference, d.location_id AS locationId, l.name AS locationName, d.gate_id AS gateId, g.name AS gateName,
@@ -163,7 +164,7 @@ export function createDelivery(ctx: Ctx, body: unknown) {
   const settings = getSettings(db, actor.orgId);
   if (!settings['delivery.categories'].some((c) => c.code === input.category)) throw badRequest(`Unknown delivery category: ${input.category}`);
   for (const uid of [input.recipientUserId, input.sponsorUserId]) {
-    if (uid && !db.prepare('SELECT 1 FROM users WHERE id = ? AND organization_id = ? AND is_active = 1').get(uid, actor.orgId)) throw badRequest('Recipient or sponsor is not an active user');
+    if (uid && !userAtLocation(db, actor.orgId, uid, locationId)) throw badRequest('Recipient or sponsor must be an active user at this location');
   }
   return db.transaction(() => {
     const vehicleId = input.vehicleRegistration

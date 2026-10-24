@@ -20,7 +20,7 @@ async function createPerson(serviceNumber = 'TCP-A-90001') {
     unit: 'Alpha Signals Wing',
     department: 'Signals',
     locationId: locationId(env.db, 'LOC-A'),
-    authorizedLocationIds: [locationId(env.db, 'HQ')],
+    authorizedLocationIds: [],
   });
   return { admin, res };
 }
@@ -30,7 +30,7 @@ describe('personnel management', () => {
     const { res } = await createPerson();
     expect(res.status).toBe(200);
     expect(res.body.serviceNumber).toBe('TCP-A-90001');
-    expect(res.body.authorizedLocations.map((l: { code: string }) => l.code).sort()).toEqual(['HQ', 'LOC-A']);
+    expect(res.body.authorizedLocations.map((l: { code: string }) => l.code)).toEqual(['LOC-A']);
     const audit = env.db.prepare("SELECT * FROM audit_events WHERE action = 'personnel.create' AND entity_ref = 'TCP-A-90001'").get();
     expect(audit).toBeTruthy();
   });
@@ -47,7 +47,7 @@ describe('personnel management', () => {
     const upd = await admin.patch(`/personnel/${res.body.id}`, { notes: 'Updated note' });
     expect(upd.status).toBe(200);
     expect(upd.body.notes).toBe('Updated note');
-    expect(upd.body.authorizedLocations).toHaveLength(2);
+    expect(upd.body.authorizedLocations).toHaveLength(1);
     expect(upd.body.unit).toBe('Alpha Signals Wing');
   });
 

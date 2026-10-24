@@ -163,7 +163,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
 export function Checkbox({ label, checked, onChange, disabled, hint }: { label: ReactNode; checked: boolean; onChange: (v: boolean) => void; disabled?: boolean; hint?: string }) {
   return (
     <label className={cx('flex items-start gap-2.5 text-sm', disabled ? 'opacity-60' : 'cursor-pointer')}>
-      <input type="checkbox" className="mt-0.5 size-4 accent-[var(--color-forest-700)]" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
+      <input type="checkbox" className="mt-0.5 size-4 shrink-0 accent-[var(--color-forest-700)]" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
       <span>
         <span className="text-ink">{label}</span>
         {hint && <span className="block text-xs text-ink-3">{hint}</span>}

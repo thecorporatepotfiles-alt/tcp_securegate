@@ -139,9 +139,8 @@ export function createPersonnel(ctx: Ctx, body: unknown) {
   requirePerm(ctx.actor, 'personnel.manage');
   const input = parse(personnelSchema, body);
   assertInScope(ctx.actor, input.locationId, 'Location');
-  for (const l of input.authorizedLocationIds) {
-    if (!ctx.db.prepare('SELECT 1 FROM locations WHERE id = ? AND organization_id = ?').get(l, ctx.actor.orgId)) throw badRequest('Unknown authorized location');
-  }
+  // Access may only be granted for locations the administrator is responsible for.
+  for (const l of input.authorizedLocationIds) scopeIds(ctx.actor, l);
   validateDates(input.accessValidFrom, input.accessValidUntil);
   return ctx.db.transaction(() => {
     const dup = ctx.db.prepare('SELECT id FROM personnel WHERE organization_id = ? AND service_number = ?').get(ctx.actor.orgId, input.serviceNumber);
@@ -216,7 +215,14 @@ export function updatePersonnel(ctx: Ctx, id: number, body: unknown) {
         .run(...set.map(([, v]) => v), ctx.actor.userId, clock.nowIso(), id);
     }
     if (input.authorizedLocationIds || input.locationId) {
-      const ids = input.authorizedLocationIds ?? existing.authorizedLocations.map((l: { id: number }) => l.id);
+      const current: number[] = existing.authorizedLocations.map((l: { id: number }) => l.id);
+      let ids = current;
+      if (input.authorizedLocationIds) {
+        // Out-of-scope authorizations can be neither added nor removed by this actor; keep them as they are.
+        for (const l of input.authorizedLocationIds) if (!current.includes(l)) scopeIds(ctx.actor, l);
+        const keep = current.filter((l) => !ctx.actor.locationIds.includes(l));
+        ids = [...new Set([...input.authorizedLocationIds, ...keep])];
+      }
       setAuthorizedLocations(ctx.db, id, input.locationId ?? existing.locationId, ids);
     }
     audit(ctx, {

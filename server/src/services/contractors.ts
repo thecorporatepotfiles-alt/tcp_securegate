@@ -3,7 +3,7 @@ import QRCode from 'qrcode';
 import type { Ctx } from '../auth/context.js';
 import { assertInScope, can, requirePerm, scopeIds, sqlIn } from '../auth/context.js';
 import { clock } from '../clock.js';
-import { badRequest, conflict, notFound, unprocessable } from '../lib/errors.js';
+import { badRequest, conflict, forbidden, notFound, unprocessable } from '../lib/errors.js';
 import { makeAccessToken, newNonce } from '../lib/crypto.js';
 import { localDate } from '../lib/time.js';
 import { likeParam, listQuery, orderBy, parse, parsePatch, zDate, zEmail, zIso, zOptText, zPhone, zText, zTime, type Page } from '../lib/http.js';
@@ -79,6 +79,13 @@ export function updateCompany(ctx: Ctx, id: number, body: unknown) {
   return ctx.db.transaction(() => {
     const existing = ctx.db.prepare('SELECT * FROM contractor_companies WHERE id = ? AND organization_id = ?').get(id, ctx.actor.orgId) as Record<string, any> | undefined;
     if (!existing) throw notFound('Organization');
+    // Organizations are shared; a location-scoped administrator may not change one used at other locations.
+    if (!ctx.actor.allLocations) {
+      const elsewhere = ctx.db
+        .prepare(`SELECT 1 FROM contractors WHERE company_id = ? AND location_id NOT IN (${ctx.actor.locationIds.map(() => '?').join(',') || 'NULL'}) LIMIT 1`)
+        .get(id, ...ctx.actor.locationIds);
+      if (elsewhere) throw forbidden('This organization also has contractors at other locations. Ask an HQ or System Administrator to change it.');
+    }
     const map: Record<string, unknown> = {
       name: input.name,
       category: input.category,
@@ -415,7 +422,13 @@ export function createTemporaryAccess(ctx: Ctx, body: unknown) {
   let holderName = input.holderName;
   let holderOrg = input.holderOrganization;
   if (input.holderType === 'PERSONNEL') {
-    const p = ctx.db.prepare("SELECT TRIM(COALESCE(rank || ' ', '') || full_name) AS name, unit, status FROM personnel WHERE id = ? AND organization_id = ?").get(input.personnelId, ctx.actor.orgId) as
+    const scope = ctx.actor.locationIds.map(() => '?').join(',') || 'NULL';
+    const p = ctx.db
+      .prepare(
+        `SELECT TRIM(COALESCE(rank || ' ', '') || full_name) AS name, unit, status FROM personnel p WHERE id = ? AND organization_id = ?
+         AND (primary_location_id IN (${scope}) OR EXISTS (SELECT 1 FROM personnel_locations pl WHERE pl.personnel_id = p.id AND pl.location_id IN (${scope})))`,
+      )
+      .get(input.personnelId, ctx.actor.orgId, ...ctx.actor.locationIds, ...ctx.actor.locationIds) as
       | { name: string; unit: string; status: string }
       | undefined;
     if (!p) throw notFound('Personnel record');
@@ -424,8 +437,11 @@ export function createTemporaryAccess(ctx: Ctx, body: unknown) {
     holderOrg = holderOrg ?? p.unit;
   } else if (input.holderType === 'CONTRACTOR') {
     const c = ctx.db
-      .prepare('SELECT c.full_name AS name, cc.name AS company, c.status FROM contractors c JOIN contractor_companies cc ON cc.id = c.company_id WHERE c.id = ? AND c.organization_id = ?')
-      .get(input.contractorId, ctx.actor.orgId) as { name: string; company: string; status: string } | undefined;
+      .prepare(
+        `SELECT c.full_name AS name, cc.name AS company, c.status FROM contractors c JOIN contractor_companies cc ON cc.id = c.company_id
+         WHERE c.id = ? AND c.organization_id = ? AND c.location_id IN (${ctx.actor.locationIds.map(() => '?').join(',') || 'NULL'})`,
+      )
+      .get(input.contractorId, ctx.actor.orgId, ...ctx.actor.locationIds) as { name: string; company: string; status: string } | undefined;
     if (!c) throw notFound('Contractor');
     if (c.status !== 'ACTIVE') throw unprocessable('Temporary access can only be issued to active contractor records.', 'HOLDER_INACTIVE');
     holderName = c.name;

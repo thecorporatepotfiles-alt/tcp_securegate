@@ -3,7 +3,7 @@
 ## How to run
 
 ```bash
-npm test             # 87 API & business-logic tests (Vitest + Supertest, in-memory SQLite, frozen clock)
+npm test             # 101 API & business-logic tests (Vitest + Supertest, in-memory SQLite, frozen clock)
 npm run typecheck    # server + client TypeScript
 npm run build && npm run e2e   # browser smoke test at desktop/tablet/mobile widths (Playwright + Chromium)
 ```
@@ -38,7 +38,7 @@ Tests run against a fresh in-memory database seeded with the synthetic dataset a
 | 22 | Reports and CSV exports return accurate filtered records | `oversight-reports-audit.test.ts` › *dashboard counts match report totals*, *CSV export returns exactly the filtered rows* |
 | 23 | Important actions appear in the audit trail | `oversight-reports-audit.test.ts` › scenario 23 (+ tamper detection, no secrets logged) |
 | 24 | Refreshing preserves database-backed changes | `oversight-reports-audit.test.ts` › scenario 24 (file database reopened); e2e › reload after recording |
-| 25 | Major screens work on desktop, tablet and mobile | `npm run e2e` (28 management screens × 3 viewports + gate flow; fails on errors or horizontal overflow) |
+| 25 | Major screens work on desktop, tablet and mobile | `npm run e2e` (28 list/admin screens + 11 detail/edit screens × 3 viewports + gate flow = 120 checks; fails on page/console errors, missing headings or horizontal overflow) |
 | 26 | Every role completes its permitted workflow | `role-workflows.test.ts` (per-role endpoints; every simulated-scanner sample yields its advertised result) |
 | 27 | Invalid input, expired sessions, permission changes | `auth-rbac.test.ts` › invalid input, idle-session expiry, permission change on next request, deactivated users |
 | 28 | Demo seeding does not create duplicates | `oversight-reports-audit.test.ts` › scenario 28 |
@@ -52,6 +52,23 @@ Tests run against a fresh in-memory database seeded with the synthetic dataset a
 - Verification TTL, operator binding of verifications, repeated-failure alerts, configurable alert rules.
 - CSV formula-injection neutralization; auditors read-only; demo login/reset disabled in production mode; CSRF header enforcement; account lockout.
 - Partial updates never reset omitted fields (regression for Zod default behaviour).
+
+## Independent security review
+
+An independent reviewer (separate from the implementation) audited every route and service for authorization gaps, IDOR, injection, secret leakage, session weaknesses and gate-rule bypasses, confirming findings with probes. Eight issues were confirmed and fixed; each has a regression test in `security-regressions.test.ts`:
+
+| Finding | Fix |
+|---|---|
+| Location administrators could grant personnel authorization for other locations | Added/removed authorized locations must be in the actor's scope; out-of-scope authorizations are preserved untouched |
+| Missing-movement corrections did not check the subject's location | Subject must belong to the corrector's locations; exits must be recorded where the subject is inside; entries only at an associated location |
+| A requester could waive the organization-wide security-verification requirement | The setting is a floor; requesters can only add the step |
+| A record blocked/deactivated after a successful verification could still be admitted within the verification window | Credential, personnel, contractor, temporary-access and vehicle state is re-checked when an entry is recorded |
+| Visitor lookup exposed contact details of visitors on visits the host cannot open; hosts could overwrite visitor details | Lookup limited to visits the user may open; only visitor administrators may change existing details |
+| Audit history of location-less records visible to location-scoped users | Restricted to all-location users |
+| Location administrators could change shared contractor organizations used at other locations | Refused unless the organization is used only within the actor's locations |
+| Demo scanner samples were not scoped to the gate's location | Samples drawn from the gate's location (the deliberate wrong-location sample excepted) |
+
+Also hardened: temporary access holders, delivery recipients/sponsors, exception owners and handover recipients must be within the relevant location; linked subjects on movements are validated; QR tokens presented in the wrong mode are masked before storage. SQL injection, read-only role enforcement, gate operator binding, session handling and append-only storage were reviewed and found sound.
 
 ## Performance check
 

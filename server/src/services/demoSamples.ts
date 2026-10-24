@@ -60,8 +60,9 @@ export function demoSamples(ctx: Ctx, gateId: number): Sample[] {
   if (used) add({ mode: 'VISITOR', method: 'QR', label: 'Single-use pass already used', expected: 'Already Used', input: makeAccessToken('VISIT_PASS', used.nonce, secret) });
   const wrongLoc = one<{ nonce: string; loc: string }>(
     `SELECT vp.token_nonce AS nonce, l.name AS loc FROM visit_passes vp JOIN visits v ON v.id = vp.visit_id JOIN locations l ON l.id = v.location_id
-     WHERE v.location_id <> ? AND vp.status = 'ACTIVE' AND v.status = 'APPROVED' LIMIT 1`,
+     WHERE v.location_id <> ? AND v.organization_id = ? AND vp.status = 'ACTIVE' AND v.status = 'APPROVED' LIMIT 1`,
     gate.location_id,
+    ctx.actor.orgId,
   );
   if (wrongLoc) add({ mode: 'VISITOR', method: 'QR', label: `Pass issued for ${wrongLoc.loc}`, expected: 'Wrong Location', input: makeAccessToken('VISIT_PASS', wrongLoc.nonce, secret) });
   const pending = one<{ reference: string }>(`SELECT reference FROM visits WHERE location_id = ? AND status IN ('EXPECTED','WAITING') AND visit_date = ? LIMIT 1`, gate.location_id, today);
@@ -89,11 +90,13 @@ export function demoSamples(ctx: Ctx, gateId: number): Sample[] {
      AND EXISTS (SELECT 1 FROM personnel_locations pl WHERE pl.personnel_id = p.id AND pl.location_id = ?)`,
     'Active card (inside)', 'Verified (exit)', today, gate.location_id, gate.location_id,
   );
-  cred("c.status = 'BLOCKED'", 'Blocked card', 'Blocked Credential');
-  cred("c.status = 'LOST'", 'Card reported lost', 'Credential Reported Lost');
-  cred("c.status = 'ACTIVE' AND p.status = 'INACTIVE'", 'Card of inactive personnel', 'Inactive Personnel');
-  cred("c.is_temporary = 1 AND (c.status = 'EXPIRED' OR c.valid_until <= ?)", 'Expired temporary card', 'Expired Credential', now);
-  cred("c.status = 'REPLACED'", 'Replaced card', 'Inactive Credential');
+  // Samples are drawn from records associated with this gate's location.
+  const here = 'EXISTS (SELECT 1 FROM personnel_locations pl WHERE pl.personnel_id = p.id AND pl.location_id = ?)';
+  cred(`c.status = 'BLOCKED' AND ${here}`, 'Blocked card', 'Blocked Credential', gate.location_id);
+  cred(`c.status = 'LOST' AND ${here}`, 'Card reported lost', 'Credential Reported Lost', gate.location_id);
+  cred(`c.status = 'ACTIVE' AND p.status = 'INACTIVE' AND ${here}`, 'Card of inactive personnel', 'Inactive Personnel', gate.location_id);
+  cred(`c.is_temporary = 1 AND (c.status = 'EXPIRED' OR c.valid_until <= ?) AND ${here}`, 'Expired temporary card', 'Expired Credential', now, gate.location_id);
+  cred(`c.status = 'REPLACED' AND ${here}`, 'Replaced card', 'Inactive Credential', gate.location_id);
   cred(
     `c.status = 'ACTIVE' AND p.status = 'ACTIVE' AND NOT EXISTS (SELECT 1 FROM personnel_locations pl WHERE pl.personnel_id = p.id AND pl.location_id = ?)
      AND NOT EXISTS (SELECT 1 FROM presence pr WHERE pr.subject_type = 'PERSONNEL' AND pr.subject_id = p.id AND pr.state = 'INSIDE')`,
@@ -109,7 +112,7 @@ export function demoSamples(ctx: Ctx, gateId: number): Sample[] {
   contractor("location_id = ? AND status = 'ACTIVE' AND valid_from <= ? AND valid_until >= ? AND window_start = '00:00'", 'Contractor pass (any hours)', 'Verified', gate.location_id, today, today);
   contractor("location_id = ? AND status = 'ACTIVE' AND valid_from <= ? AND valid_until >= ? AND window_start <> '00:00'", 'Contractor pass (permitted hours)', 'Verified or Outside Permitted Hours', gate.location_id, today, today);
   contractor('location_id = ? AND valid_until < ?', 'Expired contractor access', 'Expired Access', gate.location_id, today);
-  contractor("status <> 'ACTIVE'", 'Inactive contractor record', 'Inactive Record');
+  contractor("location_id = ? AND status <> 'ACTIVE'", 'Inactive contractor record', 'Inactive Record', gate.location_id);
 
   // Temporary access
   const ta = (where: string, label: string, expected: string, ...p: unknown[]) => {
@@ -117,8 +120,8 @@ export function demoSamples(ctx: Ctx, gateId: number): Sample[] {
     if (row) add({ mode: 'TEMPORARY', method: 'QR', label: `${label} — ${row.name}`, expected, input: makeAccessToken('TEMPORARY_ACCESS', row.nonce, secret) });
   };
   ta("location_id = ? AND status = 'ACTIVE' AND valid_from <= ? AND valid_until > ?", 'Temporary access', 'Verified', gate.location_id, now, now);
-  ta("status = 'ACTIVE' AND valid_until <= ?", 'Expired temporary access', 'Expired Access', now);
-  ta("status = 'REVOKED'", 'Revoked temporary access', 'Access Revoked');
+  ta("location_id = ? AND status = 'ACTIVE' AND valid_until <= ?", 'Expired temporary access', 'Expired Access', gate.location_id, now);
+  ta("location_id = ? AND status = 'REVOKED'", 'Revoked temporary access', 'Access Revoked', gate.location_id);
 
   // Vehicles
   const veh = (where: string, label: string, expected: string, ...p: unknown[]) => {
@@ -130,7 +133,7 @@ export function demoSamples(ctx: Ctx, gateId: number): Sample[] {
     'Authorized vehicle', 'Verified (entry)', gate.location_id,
   );
   veh("EXISTS (SELECT 1 FROM presence pr WHERE pr.subject_type = 'VEHICLE' AND pr.subject_id = v.id AND pr.state = 'INSIDE' AND pr.location_id = ?)", 'Vehicle inside', 'Verified (exit)', gate.location_id);
-  veh("authorization_status = 'BLOCKED'", 'Blocked vehicle', 'Blocked Vehicle');
+  veh("organization_id = ? AND authorization_status = 'BLOCKED'", 'Blocked vehicle', 'Blocked Vehicle', ctx.actor.orgId);
   veh("registered_location_id = ? AND authorization_status = 'PENDING' AND NOT EXISTS (SELECT 1 FROM visits x WHERE x.vehicle_id = v.id)", 'Unauthorized vehicle', 'Manual Review Required', gate.location_id);
   add({ mode: 'VEHICLE', method: 'PLATE', label: 'Unregistered vehicle — DEMO 99 ZZ 0001', expected: 'Vehicle Not Registered', input: 'DEMO 99 ZZ 0001' });
 
