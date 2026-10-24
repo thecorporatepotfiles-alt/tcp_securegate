@@ -110,6 +110,9 @@ export default function PersonnelFormPage() {
             <Select label="Assigned location" required value={form.locationId} onChange={upd('locationId')} error={errors.locationId} options={locations.map((l) => ({ value: l.id, label: l.name }))} />
             <Field label="Additional authorized locations" hint="The assigned location is always authorized.">
               <div className="grid gap-2 rounded-lg border border-line p-3">
+                {locations.filter((l) => String(l.id) !== form.locationId).length === 0 && (
+                  <p className="text-xs text-ink-3">No other locations are within your administration. Authorizations for other locations are managed by their administrators and are kept unchanged.</p>
+                )}
                 {locations
                   .filter((l) => String(l.id) !== form.locationId)
                   .map((l) => (
