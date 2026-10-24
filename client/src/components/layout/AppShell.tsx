@@ -172,13 +172,13 @@ function LocationSwitcher() {
       </div>
     );
   return (
-    <label className="flex items-center gap-2 rounded-lg border border-line bg-white py-1 pr-1 pl-3 text-[13px] text-ink-2">
-      <Building2 className="size-4 shrink-0 text-ink-3" aria-hidden />
+    <label className="flex min-w-0 items-center gap-2 rounded-lg border border-line bg-white py-1 pr-1 pl-2.5 text-[13px] text-ink-2 sm:pl-3">
+      <Building2 className="hidden size-4 shrink-0 text-ink-3 sm:block" aria-hidden />
       <span className="sr-only">Location</span>
       <select
         value={locationId ?? ''}
         onChange={(e) => setLocationId(e.target.value ? Number(e.target.value) : null)}
-        className="max-w-[170px] cursor-pointer bg-transparent py-1 pr-1 font-medium text-ink focus:outline-none sm:max-w-[220px]"
+        className="w-full max-w-[150px] min-w-0 cursor-pointer truncate bg-transparent py-1 pr-1 font-medium text-ink focus:outline-none sm:max-w-[220px]"
       >
         {allowAll && <option value="">All authorized locations</option>}
         {locations.map((l) => (
@@ -340,15 +340,17 @@ export function AppShell({ children }: { children?: ReactNode }) {
           </div>
         )}
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="no-print sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-line bg-canvas/90 px-4 backdrop-blur sm:px-6">
+          <header className="no-print sticky top-0 z-30 flex h-16 items-center gap-2 border-b border-line bg-canvas/90 px-3 backdrop-blur sm:gap-3 sm:px-6">
             <button type="button" className="rounded-lg p-2 text-ink-2 hover:bg-white lg:hidden" onClick={() => setMobileOpen(true)} aria-label="Open menu">
               <Menu className="size-5" />
             </button>
-            <div className="lg:hidden">
+            <div className="hidden sm:block lg:hidden">
               <DoorOpen className="size-5 text-forest-700" aria-hidden />
             </div>
-            <LocationSwitcher />
-            <div className="ml-auto flex items-center gap-1">
+            <div className="min-w-0 flex-1 sm:flex-none">
+              <LocationSwitcher />
+            </div>
+            <div className="ml-auto flex shrink-0 items-center gap-1">
               <NotificationBell />
               <UserMenu />
             </div>

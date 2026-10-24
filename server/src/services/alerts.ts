@@ -25,6 +25,11 @@ export interface RaiseAlertInput {
   eventId?: number | null;
   /** Alerts sharing a key while unresolved are merged (occurrence count increases). */
   dedupeKey?: string | null;
+  /**
+   * When false, an unresolved alert with the same key is left untouched (used by
+   * time-based rules that re-evaluate the same ongoing condition every run).
+   */
+  repeatWhileOpen?: boolean;
 }
 
 /** Raise (or merge into) an alert, honouring the configurable alert rules. Must run inside a transaction. */
@@ -37,6 +42,7 @@ export function raiseAlert(db: DB, actor: Actor | null, input: RaiseAlertInput):
     const existing = db
       .prepare("SELECT id, reference FROM alerts WHERE dedupe_key = ? AND status <> 'RESOLVED'")
       .get(input.dedupeKey) as { id: number; reference: string } | undefined;
+    if (existing && input.repeatWhileOpen === false) return { ...existing, merged: true };
     if (existing) {
       db.prepare('UPDATE alerts SET occurrence_count = occurrence_count + 1, last_seen_at = ?, updated_at = ?, description = ? WHERE id = ?').run(
         now,

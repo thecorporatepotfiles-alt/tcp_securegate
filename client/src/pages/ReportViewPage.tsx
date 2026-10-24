@@ -1,6 +1,14 @@
+import { useParams } from 'react-router-dom';
 import { PageHeader } from '../components/ui';
+import { ReportView } from '../components/oversight/ReportView';
 
-// PLACEHOLDER — replaced by the full implementation.
 export default function ReportViewPage() {
-  return <PageHeader title="ReportViewPage" subtitle="Under construction" />;
+  const key = String(useParams().key);
+  return (
+    <ReportView
+      key={key}
+      reportKey={key}
+      header={(def, actions) => <PageHeader back={{ to: '/reports', label: 'All reports' }} eyebrow={def?.group ?? 'Report'} title={def?.title ?? 'Report'} subtitle={def?.description} actions={actions} />}
+    />
+  );
 }

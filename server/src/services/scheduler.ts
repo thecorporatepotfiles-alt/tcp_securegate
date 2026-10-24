@@ -73,6 +73,7 @@ export function runScheduledChecks(db: DB, config: AppConfig): CheckResult {
           relatedId: v.id,
           relatedReference: v.reference,
           dedupeKey: `OVERSTAY:${v.id}`,
+          repeatWhileOpen: false,
         });
         notify(db, {
           orgId,
@@ -102,6 +103,7 @@ export function runScheduledChecks(db: DB, config: AppConfig): CheckResult {
           relatedId: v.id,
           relatedReference: v.reference,
           dedupeKey: `UNCLOSED:${v.id}`,
+          repeatWhileOpen: false,
         });
         if (r && !r.merged) result.unclosedVisitAlerts++;
       }
@@ -121,6 +123,7 @@ export function runScheduledChecks(db: DB, config: AppConfig): CheckResult {
           relatedId: d.id,
           relatedReference: d.reference,
           dedupeKey: `DELIVERYACK:${d.id}`,
+          repeatWhileOpen: false,
         });
         if (r && !r.merged) result.deliveryAckAlerts++;
       }
@@ -140,6 +143,7 @@ export function runScheduledChecks(db: DB, config: AppConfig): CheckResult {
           relatedId: x.id,
           relatedReference: x.reference,
           dedupeKey: `UNRESOLVED:${x.id}`,
+          repeatWhileOpen: false,
         });
         if (r && !r.merged) result.unresolvedExceptionAlerts++;
       }
