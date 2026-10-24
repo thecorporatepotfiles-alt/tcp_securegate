@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { ApiError, api } from '../lib/api';
+import { useGoBack } from '../lib/browserRouting';
 import { useLocationScope } from '../lib/location';
 import { addDaysStr, todayLocal } from '../lib/format';
 import type { Row } from '../lib/types';
@@ -52,6 +53,7 @@ export default function ContractorFormPage() {
   const params = useParams();
   const editId = params.id ? Number(params.id) : null;
   const navigate = useNavigate();
+  const goBack = useGoBack('/contractors');
   const { locations, locationId } = useLocationScope();
   const today = todayLocal();
   const existing = useQuery({ queryKey: ['contractors', 'detail', editId], queryFn: () => api.get<Row>(`/contractors/${editId}`), enabled: !!editId });
@@ -280,7 +282,7 @@ export default function ContractorFormPage() {
           </Card>
         )}
         <div className="flex justify-end gap-2">
-          <Button onClick={() => navigate(-1)}>Cancel</Button>
+          <Button onClick={goBack}>Cancel</Button>
           <Button type="submit" variant="primary" size="lg" loading={save.isPending}>
             {editId ? 'Save changes' : 'Create record'}
           </Button>

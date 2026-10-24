@@ -1,5 +1,6 @@
-import { useEffect } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useEffect, useRef } from 'react';
+import { useLocation, useNavigate, useNavigationType } from 'react-router-dom';
+import { BROWSER_EDITION } from './edition';
 
 /**
  * In-memory routing for the browser edition: the Artifact frame's URL cannot
@@ -9,6 +10,9 @@ import { useLocation, useNavigate } from 'react-router-dom';
 const LAST_PATH_KEY = 'sg:lastPath';
 const HASH_ROUTE = /^#\/[\w\-/]*$/;
 const SAFE_PATH = /^\/(?!\/)[\w\-/]*(\?[\w\-.~%=&+,:]*)?$/;
+
+/** In-app entries behind the current one (browser edition), so "back" never lands outside the in-memory history. */
+let historyDepth = 0;
 
 const isSafeAppPath = (p: unknown): p is string => typeof p === 'string' && p.length <= 512 && SAFE_PATH.test(p);
 
@@ -54,7 +58,18 @@ export function clearLastPath() {
 export function BrowserRouteSync(): null {
   const location = useLocation();
   const navigate = useNavigate();
+  const navigationType = useNavigationType();
+  const initial = useRef(true);
   const path = location.pathname + location.search;
+
+  useEffect(() => {
+    if (initial.current) {
+      initial.current = false;
+      return;
+    }
+    if (navigationType === 'PUSH') historyDepth += 1;
+    else if (navigationType === 'POP') historyDepth = Math.max(0, historyDepth - 1);
+  }, [location.key, navigationType]);
 
   useEffect(() => {
     if (!isSafeAppPath(path)) return;
@@ -77,4 +92,13 @@ export function BrowserRouteSync(): null {
   }, [navigate]);
 
   return null;
+}
+
+/** Go back one entry; in the browser edition, go to `fallback` when there is no earlier in-app entry (e.g. after a reload). */
+export function useGoBack(fallback: string): () => void {
+  const navigate = useNavigate();
+  return () => {
+    if (BROWSER_EDITION && historyDepth === 0) navigate(fallback);
+    else navigate(-1);
+  };
 }

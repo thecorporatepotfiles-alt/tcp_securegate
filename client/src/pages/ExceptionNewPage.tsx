@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
+import { useGoBack } from '../lib/browserRouting';
 import { useLocationScope } from '../lib/location';
 import type { Row } from '../lib/types';
 import { EXCEPTION_CATEGORIES, EXCEPTION_CATEGORY_LABEL, ROLES, ROLE_INFO } from '../../../shared/constants';
@@ -11,6 +12,7 @@ import { fieldErrors } from '../components/ops/common';
 
 export default function ExceptionNewPage() {
   const navigate = useNavigate();
+  const goBack = useGoBack('/exceptions');
   const [sp] = useSearchParams();
   const { locations, locationId } = useLocationScope();
   const [form, setForm] = useState({
@@ -81,7 +83,7 @@ export default function ExceptionNewPage() {
             />
           </div>
           <div className="mt-6 flex justify-end gap-2 border-t border-line pt-4">
-            <Button onClick={() => navigate(-1)}>Cancel</Button>
+            <Button onClick={goBack}>Cancel</Button>
             <Button type="submit" variant="primary" loading={save.isPending}>
               Record exception
             </Button>

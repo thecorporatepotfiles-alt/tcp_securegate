@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { ApiError, api } from '../lib/api';
+import { useGoBack } from '../lib/browserRouting';
 import { useMe } from '../lib/auth';
 import { useLocationScope } from '../lib/location';
 import { addDaysStr, fmtDate, nowLocalTime, todayLocal } from '../lib/format';
@@ -30,6 +31,7 @@ function roundTime(offsetMin: number): string {
 export default function VisitorNewPage() {
   const me = useMe();
   const navigate = useNavigate();
+  const goBack = useGoBack('/visitors');
   const { locations, locationId } = useLocationScope();
   const today = todayLocal();
   const defaultLoc = locationId ?? me.user.primaryLocationId ?? locations[0]?.id;
@@ -244,7 +246,7 @@ export default function VisitorNewPage() {
         </Card>
 
         <div className="flex justify-end gap-2">
-          <Button onClick={() => navigate(-1)}>Cancel</Button>
+          <Button onClick={goBack}>Cancel</Button>
           <Button type="submit" variant="primary" size="lg" loading={save.isPending}>
             Submit for authorization
           </Button>

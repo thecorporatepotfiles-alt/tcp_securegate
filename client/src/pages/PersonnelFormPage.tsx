@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { ApiError, api } from '../lib/api';
+import { useGoBack } from '../lib/browserRouting';
 import { useLocationScope } from '../lib/location';
 import type { Row } from '../lib/types';
 import { useAction } from '../components/toast';
@@ -13,6 +14,7 @@ export default function PersonnelFormPage() {
   const params = useParams();
   const editId = params.id ? Number(params.id) : null;
   const navigate = useNavigate();
+  const goBack = useGoBack('/personnel');
   const { locations, locationId } = useLocationScope();
   const existing = useQuery({ queryKey: ['personnel', 'detail', editId], queryFn: () => api.get<Row>(`/personnel/${editId}`), enabled: !!editId });
   const [form, setForm] = useState({
@@ -130,7 +132,7 @@ export default function PersonnelFormPage() {
             <Textarea label="Notes" containerClassName="sm:col-span-2" value={form.notes} onChange={upd('notes')} />
           </div>
           <div className="mt-6 flex justify-end gap-2 border-t border-line pt-4">
-            <Button onClick={() => navigate(-1)}>Cancel</Button>
+            <Button onClick={goBack}>Cancel</Button>
             <Button type="submit" variant="primary" loading={save.isPending}>
               {editId ? 'Save changes' : 'Create record'}
             </Button>
