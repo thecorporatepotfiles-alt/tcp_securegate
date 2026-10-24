@@ -31,7 +31,7 @@ Variants to show: **Reject** (reason required, no pass), **Cancel** (pass revoke
 3. Scan the same pass again → it now offers only **Record Exit**. Record it, then scan once more → **Already Used**.
 4. **Verify Personnel** → *Mock reader* → *Blocked card* → **Blocked Credential — Do not admit**; no bypass button. Then *Card not authorized here* → **Wrong Location** → **Refer for manual review** with a note.
 5. Sign in as **`alpha.admin`** → **Manual Reviews** → approve with a note. Back on the gate, *My manual reviews* → record the single approved movement (outcome *Recorded after review*).
-6. **Register Vehicle** → enter `DM 99 ZZ 0001` (not registered) → quick-register → re-verify → *Manual Review Required*. Then an authorized vehicle → **Record Entry**, noting the message that occupants are recorded separately.
+6. **Register Vehicle** → enter `DEMO 99 ZZ 0001` (not registered — also in the simulated samples) → quick-register → re-verify → *Manual Review Required*. Then an authorized vehicle → **Record Entry**, noting the message that occupants are recorded separately.
 7. **Register Delivery** → register arrival (courier, recipient *Capt Neha Sharma*) → status *Awaiting authorization*.
 8. **Visitor Arrival** → register a walk-in for *Lt Col Arjun Nair* → host is notified; entry is still not permitted until authorized.
 

@@ -638,7 +638,7 @@ export function seedDemo(db: DB, config: AppConfig): { seeded: boolean; summary:
       const arrivedAt = s.enteredAt ?? (['ARRIVED', 'HOST_NOTIFIED', 'WAITING'].includes(s.status) ? nowMs - between(5, 25) * 60_000 : null);
       const id = Number(
         insVisit.run(
-          org, reference, s.loc.id, visitorId, s.source ?? 'PRE_REGISTERED', host, 'Host department', officer, pick(PURPOSES), pick(DESTINATIONS), visitDate,
+          org, reference, s.loc.id, visitorId, s.source ?? 'PRE_REGISTERED', host, pick(DEPARTMENTS), officer, pick(PURPOSES), pick(DESTINATIONS), visitDate,
           iso(s.arrival), iso(s.departure), vehicleId, null, s.status, s.securityCheck ? 1 : 0,
           s.securityCheck === 'DONE' ? adminOf[s.loc.id] : null, s.securityCheck === 'DONE' ? iso(created + 3_600_000) : null, s.securityCheck === 'DONE' ? 'Security verification step completed (synthetic)' : null,
           s.status === 'WAITING' ? host : null, s.status === 'WAITING' ? iso(nowMs - 4 * 60_000) : null,

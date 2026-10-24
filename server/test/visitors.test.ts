@@ -244,6 +244,10 @@ describe('walk-in visitors, host acknowledgement & waiting list', () => {
     const visit = await admin.get(`/visits/${res.body.id}`);
     expect(visit.body.status).toBe('OVERDUE');
     expect(env.db.prepare("SELECT 1 FROM alerts WHERE alert_type = 'VISITOR_OVERSTAY' AND related_id = ?").get(res.body.id)).toBeTruthy();
+    // Re-running the periodic checks must not inflate an ongoing condition's alert.
+    await admin.post('/admin/run-checks');
+    const overstay = env.db.prepare("SELECT occurrence_count AS n FROM alerts WHERE alert_type = 'VISITOR_OVERSTAY' AND related_id = ?").get(res.body.id) as { n: number };
+    expect(overstay.n).toBe(1);
     // Overdue visitors can still exit.
     const guard2 = await env.as('alpha.guard');
     const v2 = await verify(guard2, gateId(env.db, 'A1'), 'VISITOR', res.body.reference);
