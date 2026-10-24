@@ -21,8 +21,18 @@ function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
  * policy forbids compiling WebAssembly fall back to the pure-JavaScript
  * (asm.js) build of the same SQLite version.
  */
+/** Whether this page may compile WebAssembly (a content security policy can forbid it). */
+function canCompileWasm(): boolean {
+  try {
+    new WebAssembly.Module(new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function loadSqlEngine(): Promise<{ SQL: SqlJsStatic; engine: Engine }> {
-  if (typeof WebAssembly === 'object') {
+  if (typeof WebAssembly === 'object' && canCompileWasm()) {
     try {
       const wasmBinary = decodeBase64(wasmBase64);
       const SQL = await withTimeout(initWasm({ wasmBinary: wasmBinary.buffer as ArrayBuffer }), 20_000, 'SQLite (WebAssembly) start-up');

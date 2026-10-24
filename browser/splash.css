@@ -36,8 +36,20 @@
   --sg-splash-ok: #5cc28e;
 }
 
+.sg-splash-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  overflow: auto;
+  background: var(--sg-splash-bg);
+  transition: opacity 0.2s ease;
+}
+.sg-splash-overlay.is-leaving {
+  opacity: 0;
+  pointer-events: none;
+}
 .sg-splash {
-  min-height: 100vh;
+  min-height: 100%;
   display: grid;
   place-items: center;
   padding: 24px 16px;

@@ -18,7 +18,7 @@ interface AnyDb {
   };
   exec(sql: string): unknown;
   pragma(source: string, options?: { simple?: boolean }): unknown;
-  transaction<F extends (...args: never[]) => unknown>(fn: F): F;
+  transaction<F extends (...args: never[]) => unknown>(fn: F): F & Record<'default' | 'deferred' | 'immediate' | 'exclusive', F>;
   readonly inTransaction: boolean;
   close(): unknown;
 }
@@ -128,14 +128,16 @@ describe('better-sqlite3 shim (sql.js)', () => {
       const db = new Database();
       const err = outcome(() => db.exec('SELEC')) as Record<string, unknown>;
       expect(err).toEqual({ error: 'SqliteError', name: 'SqliteError', code: 'SQLITE_ERROR', message: 'near "SELEC": syntax error' });
+      let caught: unknown;
       try {
         db.exec('SELEC');
       } catch (e) {
-        expect(e).toBeInstanceOf(SqliteError);
-        expect(e).toBeInstanceOf(Error);
-        expect(Object.keys(e as object)).toEqual(['code']);
-        expect(String(e)).toBe('SqliteError: near "SELEC": syntax error');
+        caught = e;
       }
+      expect(caught).toBeInstanceOf(SqliteError);
+      expect(caught).toBeInstanceOf(Error);
+      expect(Object.keys(caught as object)).toEqual(['code']);
+      expect(String(caught)).toBe('SqliteError: near "SELEC": syntax error');
       expect(Database.SqliteError).toBe(SqliteError);
       db.close();
     });
@@ -150,10 +152,10 @@ describe('better-sqlite3 shim (sql.js)', () => {
       ['named with null prototype', 'SELECT @a AS a', [Object.assign(Object.create(null), { a: 5 })]],
       ['mixed anonymous and named', 'SELECT ? AS x, @a AS a, ? AS y', [1, { a: 2 }, 3]],
       ['undefined binds null', 'SELECT ? AS v, @w AS w', [undefined, { w: undefined }]],
-      ['bigint', 'SELECT ? AS v, typeof(?) AS t', [10n, 2n ** 40n]],
+      ['bigint', 'SELECT ? AS v, typeof(?) AS t', [10n, 2n ** 20n]],
       ['floats and NaN', 'SELECT ? AS a, ? AS b', [1.5, NaN]],
       ['blob', 'SELECT hex(?) AS h, typeof(?) AS t', [new Uint8Array([1, 2, 255]), Buffer.from([7])]],
-      ['parameters inside literals are ignored', "SELECT '?', \"@x\", [?y], `$z`, ? AS v -- ?\n/* :c */", [1]],
+      ['parameters inside literals are ignored', "SELECT '?' AS \"q@x\", 1 AS [?y], 2 AS `$z`, ? AS v -- ?\n/* :c */", [1]],
       ['boolean is rejected', 'SELECT ? AS v', [true]],
       ['Date is rejected', 'SELECT ? AS v', [new Date(0)]],
       ['nested array is rejected', 'SELECT ? AS a, ? AS b', [[1, [2]]]],
@@ -213,11 +215,23 @@ describe('better-sqlite3 shim (sql.js)', () => {
         db.pragma('foreign_keys = ON', { simple: true }),
         db.pragma('journal_mode = WAL'),
         db.pragma('journal_mode', { simple: true }),
-        db.pragma('table_info(p)').length,
+        (db.pragma('table_info(p)') as unknown[]).length,
         db.pragma('user_version = 3', { simple: true }),
         db.pragma('user_version', { simple: true }),
       ]);
       expectSameAsNative((db) => db.pragma('foreign_keys', { simple: 1 as unknown as boolean }));
+    });
+
+    it('documented differences: SQLite storage class of bound numbers', () => {
+      // sql.js has no int64 binding and binds int32-valued numbers as INTEGER; native binds every number as REAL.
+      const sql = 'SELECT typeof(?) AS small, typeof(?) AS big, typeof(?) AS huge, ? AS text';
+      const params = [5, 2n ** 40n, 2n ** 60n, 2n ** 60n];
+      const shim = new Database();
+      const native = new Native(':memory:');
+      expect(native.prepare(sql).get(...params)).toEqual({ small: 'real', big: 'integer', huge: 'integer', text: 1152921504606846976 });
+      expect(shim.prepare(sql).get(...params)).toEqual({ small: 'integer', big: 'real', huge: 'text', text: '1152921504606846976' });
+      shim.close();
+      native.close();
     });
 
     it('pluck() and raw()', () => {
@@ -322,7 +336,7 @@ describe('better-sqlite3 shim (sql.js)', () => {
       expect(db.pragma('foreign_keys', { simple: true })).toBe(1);
       expect(db.pragma('recursive_triggers', { simple: true })).toBe(1);
       expect(db.pragma('journal_mode', { simple: true })).toBe('memory');
-      expect(() => db.prepare('INSERT INTO c (p_id) VALUES (99)').run()).toThrow(expect.objectContaining({ code: 'SQLITE_CONSTRAINT_FOREIGNKEY' }));
+      expect(outcome(() => db.prepare('INSERT INTO c (p_id) VALUES (99)').run())).toMatchObject({ code: 'SQLITE_CONSTRAINT_FOREIGNKEY' });
       expect(count.get()).toEqual({ n: 2 });
       expect(db.prepare("INSERT INTO p (code, n) VALUES ('C', 3)").run().lastInsertRowid).toBe(3);
 
@@ -457,6 +471,7 @@ describe('better-sqlite3 shim (sql.js)', () => {
       expect(memory.exec('') === memory).toBe(true);
       const ro = new Database(memory.serialize(), { readonly: true });
       expect(() => ro.exec('CREATE TABLE t (a)')).toThrow(SqliteError);
+      expect(outcome(() => new Database(Buffer.from('not a database file, just some synthetic text')))).toMatchObject({ code: 'SQLITE_NOTADB' });
       for (const db of [memory, unnamed, empty, ro]) db.close();
     });
 
@@ -464,22 +479,15 @@ describe('better-sqlite3 shim (sql.js)', () => {
       let saved: FileStore | null = null;
       const files = new Map<string, Uint8Array>();
       const memoryStore: FileStore = { read: (f) => files.get(f), write: (f, d) => void files.set(f, d) };
+      // The suite setup installs a Node file store; take it out for these tests.
       beforeEach(() => {
-        // The suite setup installs a Node file store; capture it by swapping in a probe.
-        saved = null;
-        setFileStore({
-          read: (f) => {
-            throw new Error(`unexpected read of ${f}`);
-          },
-          write: () => {},
-        });
+        saved = setFileStore(null);
       });
       afterEach(() => {
         setFileStore(saved);
       });
 
       it('throw unless a file store is installed', () => {
-        setFileStore(null);
         expect(() => new Database('/tmp/whatever.db')).toThrow(new Error('The browser edition supports in-memory databases only'));
       });
 
@@ -494,7 +502,7 @@ describe('better-sqlite3 shim (sql.js)', () => {
         const second = new Database('demo.db');
         expect(second.prepare('SELECT a FROM t').all()).toEqual([{ a: 'kept' }]);
         second.close();
-        expect(() => new Database('missing.db', { fileMustExist: true })).toThrow(expect.objectContaining({ code: 'SQLITE_CANTOPEN' }));
+        expect(outcome(() => new Database('missing.db', { fileMustExist: true }))).toMatchObject({ error: 'SqliteError', code: 'SQLITE_CANTOPEN' });
       });
     });
   });

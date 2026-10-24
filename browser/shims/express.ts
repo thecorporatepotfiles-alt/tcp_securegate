@@ -750,7 +750,8 @@ function splitPathArgs(args: unknown[]): { path: PathParams; handlers: unknown[]
 }
 
 export function Router(options: RouterOptions = {}): Router {
-  const router = function router(req: Request, res: Response, next: NextFunction) {
+  // The inner function is unnamed on purpose: `router` must refer to the typed const below.
+  const router = function (req: Request, res: Response, next: NextFunction) {
     router.handle(req, res, next);
   } as Router;
   const stack: Layer[] = [];
@@ -1099,6 +1100,8 @@ class ShimResponse implements Response {
   statusMessage = '';
   private sent = false;
   private ended = false;
+  private streamed = false;
+  private removedContentLength = false;
   private chunks: string[] = [];
   private readonly headerMap = new Map<string, { name: string; value: string | number | string[] }>();
   private readonly listeners: { event: string; fn: () => void; once: boolean }[] = [];
@@ -1142,6 +1145,7 @@ class ShimResponse implements Response {
 
   removeHeader(name: string): void {
     if (this.sent) throw headersSentError();
+    if (name.toLowerCase() === 'content-length') this.removedContentLength = true;
     this.headerMap.delete(name.toLowerCase());
   }
 
@@ -1156,6 +1160,7 @@ class ShimResponse implements Response {
   write(chunk: string | Uint8Array): boolean {
     if (this.ended) throw Object.assign(new Error('write after end'), { code: 'ERR_STREAM_WRITE_AFTER_END' });
     this.sent = true;
+    this.streamed = true;
     this.chunks.push(typeof chunk === 'string' ? chunk : decodeBytes(chunk));
     return true;
   }
@@ -1341,7 +1346,14 @@ class ShimResponse implements Response {
   toResult(): DispatchResult {
     const headers: Record<string, string | string[]> = {};
     for (const [k, v] of this.headerMap) headers[k] = Array.isArray(v.value) ? v.value.map(String) : String(v.value);
-    return { status: this.statusCode, headers, body: this.chunks.join('') };
+    if (typeof headers['set-cookie'] === 'string') headers['set-cookie'] = [headers['set-cookie']];
+    const body = this.chunks.join('');
+    // Like Node: a body passed whole to end() gets a Content-Length unless the response has no body.
+    const bodiless = this.req?.method === 'HEAD' || this.statusCode === 204 || this.statusCode === 304 || this.statusCode < 200;
+    if (!bodiless && !this.streamed && !this.removedContentLength && headers['content-length'] === undefined && headers['transfer-encoding'] === undefined) {
+      headers['content-length'] = String(byteLength(body));
+    }
+    return { status: this.statusCode, headers, body: bodiless ? '' : body };
   }
 }
 
@@ -1404,7 +1416,7 @@ function compileQueryParser(val: unknown): ((s: string) => Query) | undefined {
 }
 
 function createApplication(): Express {
-  const app = function app(req: Request, res: Response, next?: NextFunction) {
+  const app = function (req: Request, res: Response, next?: NextFunction) {
     app.handle(req, res, next);
   } as Express;
   const settings: Record<string, any> = Object.create(null);
@@ -1577,8 +1589,16 @@ function serveStatic(_root?: string, _options?: Record<string, unknown>): Reques
 /**
  * Run one request through `app` in-process. Resolves once the response has
  * ended (including after async handlers); it never rejects for HTTP errors.
+ *
+ * `app` must be an application created by this shim. The parameter is typed
+ * loosely so callers compile whether 'express' resolves to these types or to
+ * @types/express (e.g. the return type of server/src/app.ts createApp()).
  */
-export function dispatch(app: Express, input: DispatchRequest): Promise<DispatchResult> {
+export function dispatch(appLike: Express | ((...args: never[]) => unknown), input: DispatchRequest): Promise<DispatchResult> {
+  const app = appLike as Express;
+  if (typeof app !== 'function' || typeof app.handle !== 'function' || typeof app.set !== 'function') {
+    return Promise.reject(new TypeError('dispatch() expects an application created by the browser Express shim'));
+  }
   return new Promise((resolve) => {
     const headers: Record<string, string> = {};
     for (const [k, v] of Object.entries(input.headers ?? {})) headers[k.toLowerCase()] = String(v);

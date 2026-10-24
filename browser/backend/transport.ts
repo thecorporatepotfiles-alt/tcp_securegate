@@ -112,12 +112,17 @@ function apiPath(input: RequestInfo | URL): string | null {
   return url.pathname + url.search;
 }
 
-export function installFetchInterceptor(dispatch: Dispatch, jar: CookieJar, onSettled?: (method: string) => void): () => void {
+/**
+ * Install the interceptor. API requests made before `ready` settles wait for
+ * it, so the client may start before the in-page server has finished booting.
+ */
+export function installFetchInterceptor(ready: Promise<Dispatch>, jar: CookieJar, onSettled?: (method: string) => void): () => void {
   const realFetch = globalThis.fetch.bind(globalThis);
 
   const intercepted: typeof fetch = async (input, init) => {
     const path = apiPath(input);
     if (path === null) return realFetch(input, init);
+    const dispatch = await ready;
     const request = input instanceof Request ? input : null;
     const method = (init?.method ?? request?.method ?? 'GET').toUpperCase();
     const headers = { ...headersToObject(request?.headers), ...headersToObject(init?.headers) };

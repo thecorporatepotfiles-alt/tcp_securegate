@@ -1,9 +1,12 @@
 /**
- * Browser edition entry point: start the in-page server, then the client.
- * Until the client renders, #root shows a plain progress screen.
+ * Browser edition entry point. The client renders into #root straight away
+ * (its API requests wait for the in-page server); a start-up overlay covers
+ * it until the server has booted.
  */
+import './early.js';
 import './splash.css';
 import { bootBrowserBackend, type BootStep } from './backend/host.js';
+import '../client/src/main.tsx';
 
 const STEPS: { key: BootStep; label: string }[] = [
   { key: 'engine', label: 'Loading the database engine' },
@@ -12,7 +15,9 @@ const STEPS: { key: BootStep; label: string }[] = [
   { key: 'start', label: 'Starting SecureGate' },
 ];
 
-const root = document.getElementById('root')!;
+const overlay = document.createElement('div');
+overlay.className = 'sg-splash-overlay';
+document.body.append(overlay);
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className: string, text?: string): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag);
@@ -40,7 +45,7 @@ function renderSplash() {
   const note = el('p', 'sg-splash-note', 'Everything runs inside this page. No data is sent anywhere.');
   card.append(mark, title, sub, list, note);
   wrap.append(card);
-  root.replaceChildren(wrap);
+  overlay.replaceChildren(wrap);
   return list;
 }
 
@@ -77,7 +82,7 @@ function renderFailure(err: unknown) {
   });
   card.append(title, msg, btn);
   wrap.append(card);
-  root.replaceChildren(wrap);
+  overlay.replaceChildren(wrap);
 }
 
 async function start() {
@@ -89,7 +94,8 @@ async function start() {
     renderFailure(err);
     return;
   }
-  await import('../client/src/main.tsx');
+  overlay.classList.add('is-leaving');
+  setTimeout(() => overlay.remove(), 250);
 }
 
 void start();

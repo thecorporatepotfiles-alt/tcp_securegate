@@ -26,8 +26,6 @@ export interface Response {
   get(name: string): string | string[] | undefined;
 }
 
-type QueryValue = string | number | boolean | null | undefined | Date | QueryValue[] | { [key: string]: QueryValue };
-
 /** RFC 3986 encoding as used by qs.stringify. */
 const encode = (s: string) => encodeURIComponent(s).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
 
@@ -115,7 +113,7 @@ export class Test implements PromiseLike<Response> {
     private readonly jar: CookieJar | null,
   ) {}
 
-  query(value: Record<string, QueryValue> | string): this {
+  query(value: Record<string, unknown> | string): this {
     if (typeof value === 'string') this.queryParts.push(value);
     else Object.assign(this.queryObj, value);
     return this;
@@ -197,8 +195,8 @@ export class Test implements PromiseLike<Response> {
       body = typeof this.data === 'string' ? this.data : json ? JSON.stringify(this.data) : String(this.data);
     }
 
-    // supertest's ephemeral server listens on '::', so the API sees the IPv4-mapped loopback address.
-    const result = await dispatch(this.app, { method: this.method, url, headers, body, ip: '::ffff:127.0.0.1' });
+    // supertest's ephemeral server listens on 127.0.0.1, which is what req.ip reports.
+    const result = await dispatch(this.app, { method: this.method, url, headers, body, ip: '127.0.0.1' });
 
     const resHeaders: Record<string, string | string[]> = {};
     for (const [k, v] of Object.entries(result.headers)) resHeaders[k] = k === 'set-cookie' ? ([] as string[]).concat(v) : Array.isArray(v) ? v.join(', ') : v;

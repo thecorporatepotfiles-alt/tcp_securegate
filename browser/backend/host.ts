@@ -14,7 +14,7 @@ import { ensureBaseline, seedDemo } from '../../server/src/seed/demo.js';
 import { randomToken } from '../../server/src/lib/crypto.js';
 import { loadSqlEngine, type Engine } from './engine.js';
 import { openSnapshotStore, type Snapshot, type SnapshotStore } from './persistence.js';
-import { CookieJar, installFetchInterceptor } from './transport.js';
+import { CookieJar, installFetchInterceptor, type Dispatch } from './transport.js';
 
 export interface BrowserHost {
   engine: Engine;
@@ -83,7 +83,37 @@ function restore(snapshot: Snapshot): DB | null {
   }
 }
 
+let resolveDispatch!: (d: Dispatch) => void;
+let rejectDispatch!: (err: unknown) => void;
+const dispatchReady = new Promise<Dispatch>((resolve, reject) => {
+  resolveDispatch = resolve;
+  rejectDispatch = reject;
+});
+// Requests that arrive after a failed start-up must not stay pending forever.
+dispatchReady.catch(() => {});
+
+const jar = new CookieJar();
+let afterRequest: (method: string) => void = () => {};
+
+/**
+ * Route `/api` fetches to the in-page server. Called before the client
+ * module is evaluated: the bundle evaluates every module up front, so the
+ * client may issue requests while the server is still starting.
+ */
+export function interceptApiRequests(): void {
+  installFetchInterceptor(dispatchReady, jar, (method) => afterRequest(method));
+}
+
 export async function bootBrowserBackend(onStep: (step: BootStep) => void = () => {}): Promise<BrowserHost> {
+  try {
+    return await boot(onStep);
+  } catch (err) {
+    rejectDispatch(err);
+    throw err;
+  }
+}
+
+async function boot(onStep: (step: BootStep) => void): Promise<BrowserHost> {
   onStep('engine');
   await paint();
   const { SQL, engine } = await loadSqlEngine();
@@ -121,11 +151,11 @@ export async function bootBrowserBackend(onStep: (step: BootStep) => void = () =
   await paint();
   const app = createApp({ db: liveDb, config });
   const stopScheduler = startScheduler(liveDb, config);
-  const jar = new CookieJar();
 
   // ---- Persistence: save after changes, debounced; flush when the page is hidden.
   let savedChanges = -1;
   let timer: ReturnType<typeof setTimeout> | null = null;
+  let dueAt = 0;
   let firstDirtyAt = 0;
   let saving: Promise<void> | null = null;
   let stopped = false;
@@ -162,17 +192,17 @@ export async function bootBrowserBackend(onStep: (step: BootStep) => void = () =
     if (totalChanges() === savedChanges) return;
     const now = Date.now();
     if (!firstDirtyAt) firstDirtyAt = now;
-    if (timer) clearTimeout(timer);
     const debounce = urgent ? SAVE_AFTER_ACTION_MS : SAVE_DEBOUNCE_MS;
-    const wait = Math.max(0, Math.min(debounce, firstDirtyAt + SAVE_MAX_WAIT_MS - now));
-    timer = setTimeout(() => void saveNow(), wait);
+    const due = Math.min(now + debounce, firstDirtyAt + SAVE_MAX_WAIT_MS);
+    // A pending save may be brought forward, never pushed back: background
+    // polling must not delay saving a change the user just made.
+    if (timer && dueAt <= due) return;
+    if (timer) clearTimeout(timer);
+    dueAt = due;
+    timer = setTimeout(() => void saveNow(), Math.max(0, due - now));
   }
 
-  installFetchInterceptor(
-    (req) => dispatch(app, req),
-    jar,
-    (method) => schedule(method !== 'GET' && method !== 'HEAD'),
-  );
+  afterRequest = (method) => schedule(method !== 'GET' && method !== 'HEAD');
   // The scheduler also writes (expiries, overdue alerts); pick those changes up periodically.
   const sweep = setInterval(() => schedule(), config.schedulerIntervalSeconds * 1000);
   const flush = () => {
@@ -202,5 +232,6 @@ export async function bootBrowserBackend(onStep: (step: BootStep) => void = () =
     },
   };
   window.__SG_BROWSER__ = host;
+  resolveDispatch((req) => dispatch(app, req));
   return host;
 }

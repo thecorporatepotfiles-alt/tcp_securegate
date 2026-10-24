@@ -5,7 +5,13 @@
  * Semantics follow better-sqlite3 12.x: parameter binding and its errors,
  * SqliteError codes, run() results, transaction()/savepoints, pragma(), the
  * "busy" rules while an iterator is open, and errors after close(). Databases
- * are in-memory only (optionally opened from / serialized to bytes).
+ * are in-memory (optionally opened from / serialized to bytes); file names
+ * work only through an installed FileStore.
+ *
+ * Known differences: sql.js binds int32-valued numbers as INTEGER (native: REAL)
+ * and has no int64 binding (bigints beyond int32 bind as REAL, beyond 2^53 as
+ * TEXT); Statement#readonly is a heuristic; serialize() drops TEMP objects and
+ * re-applies only pragmas set through pragma().
  */
 import type { Database as SqlJsDatabase, SqlJsStatic, SqlValue, Statement as SqlJsStatement } from 'sql.js';
 
@@ -33,8 +39,11 @@ export interface FileStore {
 
 let fileStore: FileStore | null = null;
 
-export function setFileStore(store: FileStore | null): void {
+/** Install (or with null remove) the file store; returns the previous one. */
+export function setFileStore(store: FileStore | null): FileStore | null {
+  const previous = fileStore;
   fileStore = store;
+  return previous;
 }
 
 export class SqliteError extends Error {
@@ -277,7 +286,12 @@ class Connection {
       }
     };
     this.db = db;
-    this.applyPragmas();
+    try {
+      this.applyPragmas(); // also the first read of opened bytes (e.g. "file is not a database")
+    } catch (e) {
+      this.close();
+      throw e;
+    }
   }
 
   ensureOpen(): SqlJsDatabase {
@@ -752,14 +766,6 @@ export interface Transaction<F extends AnyFunction> {
   database: Database;
 }
 
-/** Undo a WAL-mode header so a file copied from a WAL database opens without its (absent) -wal file. */
-function rollbackJournalHeader(bytes: Uint8Array): Uint8Array {
-  if (bytes.length < 20 || bytes[18] !== 2 || bytes[19] !== 2) return bytes;
-  const copy = bytes.slice();
-  copy[18] = copy[19] = 1;
-  return copy;
-}
-
 class Database {
   static SqliteError = SqliteError;
 
@@ -789,7 +795,7 @@ class Database {
       if (!bytes && booleanOption(options, 'fileMustExist')) throw new SqliteError('unable to open database file', 'SQLITE_CANTOPEN');
       this.#file = { store: fileStore, path };
     }
-    this.#conn = new Connection(getSqlJs(), bytes && rollbackJournalHeader(bytes));
+    this.#conn = new Connection(getSqlJs(), bytes);
     this.name = filename;
     this.memory = anonymous;
     this.readonly = readonly;

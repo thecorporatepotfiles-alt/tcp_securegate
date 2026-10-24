@@ -83,19 +83,83 @@ export function dirname(path: string): string {
 }
 
 export function basename(path: string, suffix?: string): string {
-  let end = path.length;
-  while (end > 1 && path[end - 1] === '/') end--;
-  const trimmed = path.slice(0, end);
-  let base = trimmed.slice(trimmed.lastIndexOf('/') + 1);
-  if (base === '' && trimmed === '/') base = '';
-  if (suffix && base !== suffix && base.endsWith(suffix)) base = base.slice(0, -suffix.length);
-  return base;
+  let start = 0;
+  let end = -1;
+  let matchedSlash = true;
+  if (suffix !== undefined && suffix.length > 0 && suffix.length <= path.length) {
+    if (suffix === path) return '';
+    let extIdx = suffix.length - 1;
+    let firstNonSlashEnd = -1;
+    for (let i = path.length - 1; i >= 0; --i) {
+      if (path[i] === '/') {
+        if (!matchedSlash) {
+          start = i + 1;
+          break;
+        }
+      } else {
+        if (firstNonSlashEnd === -1) {
+          matchedSlash = false;
+          firstNonSlashEnd = i + 1;
+        }
+        if (extIdx >= 0) {
+          if (path[i] === suffix[extIdx]) {
+            if (--extIdx === -1) end = i;
+          } else {
+            extIdx = -1;
+            end = firstNonSlashEnd;
+          }
+        }
+      }
+    }
+    if (start === end) end = firstNonSlashEnd;
+    else if (end === -1) end = path.length;
+    return path.slice(start, end);
+  }
+  for (let i = path.length - 1; i >= 0; --i) {
+    if (path[i] === '/') {
+      if (!matchedSlash) {
+        start = i + 1;
+        break;
+      }
+    } else if (end === -1) {
+      matchedSlash = false;
+      end = i + 1;
+    }
+  }
+  return end === -1 ? '' : path.slice(start, end);
 }
 
 export function extname(path: string): string {
-  const base = basename(path);
-  const dot = base.lastIndexOf('.');
-  return dot <= 0 ? '' : base.slice(dot);
+  let startDot = -1;
+  let startPart = 0;
+  let end = -1;
+  let matchedSlash = true;
+  // 0: nothing seen before the dot yet, 1: only dots, -1: a regular character.
+  let preDotState = 0;
+  for (let i = path.length - 1; i >= 0; --i) {
+    const char = path[i];
+    if (char === '/') {
+      if (!matchedSlash) {
+        startPart = i + 1;
+        break;
+      }
+      continue;
+    }
+    if (end === -1) {
+      matchedSlash = false;
+      end = i + 1;
+    }
+    if (char === '.') {
+      if (startDot === -1) startDot = i;
+      else if (preDotState !== 1) preDotState = 1;
+    } else if (startDot !== -1) {
+      preDotState = -1;
+    }
+  }
+  if (startDot === -1 || end === -1 || preDotState === 0 || (preDotState === 1 && startDot === end - 1 && startDot === startPart + 1)) {
+    return '';
+  }
+  return path.slice(startDot, end);
 }
 
 export function relative(from: string, to: string): string {
@@ -107,34 +171,7 @@ export function relative(from: string, to: string): string {
   return [...Array(f.length - i).fill('..'), ...t.slice(i)].join('/');
 }
 
-export interface ParsedPath {
-  root: string;
-  dir: string;
-  base: string;
-  ext: string;
-  name: string;
-}
-
-export function parse(path: string): ParsedPath {
-  const root = path.startsWith('/') ? '/' : '';
-  const base = basename(path);
-  const ext = extname(path);
-  const dir = path.includes('/') ? dirname(path) : '';
-  return { root, dir, base, ext, name: ext ? base.slice(0, -ext.length) : base };
-}
-
-export function format(p: Partial<ParsedPath>): string {
-  const dir = p.dir || p.root || '';
-  const base = p.base || `${p.name ?? ''}${p.ext ? (p.ext.startsWith('.') ? '' : '.') + p.ext : ''}`;
-  if (!dir) return base;
-  return dir === p.root ? `${dir}${base}` : `${dir}/${base}`;
-}
-
-export function toNamespacedPath(path: string): string {
-  return path;
-}
-
-const posixPath = { sep, delimiter, normalize, isAbsolute, join, resolve, dirname, basename, extname, relative, parse, format, toNamespacedPath };
+const posixPath = { sep, delimiter, normalize, isAbsolute, join, resolve, dirname, basename, extname, relative };
 export const posix = posixPath;
 
 export default { ...posixPath, posix: posixPath };
