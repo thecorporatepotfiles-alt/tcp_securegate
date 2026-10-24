@@ -1,0 +1,95 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  --color-forest-950: #0a1510;
+  --color-forest-900: #102219;
+  --color-forest-850: #132a1f;
+  --color-forest-800: #173226;
+  --color-forest-700: #1e4434;
+  --color-forest-600: #275a45;
+  --color-forest-500: #307157;
+  --color-forest-200: #c9ddd1;
+  --color-forest-100: #e4efe8;
+  --color-forest-50: #f1f7f3;
+
+  --color-gold-600: #9c7a33;
+  --color-gold-500: #b8913f;
+  --color-gold-400: #cba35a;
+  --color-gold-300: #ddc18c;
+  --color-gold-200: #ecdcb9;
+  --color-gold-100: #f7f0e1;
+
+  --color-canvas: #f4f3ee;
+  --color-card: #ffffff;
+  --color-line: #e4e2d9;
+  --color-line-strong: #d3d0c4;
+  --color-ink: #16201b;
+  --color-ink-2: #4a544e;
+  --color-ink-3: #78807b;
+
+  --color-ok: #1b7a4b;
+  --color-ok-bg: #e5f3eb;
+  --color-warn: #8f6200;
+  --color-warn-bg: #fcf2d9;
+  --color-bad: #b02a2a;
+  --color-bad-bg: #fae8e6;
+  --color-info: #2a5698;
+  --color-info-bg: #e7eef9;
+  --color-mute: #5a615d;
+  --color-mute-bg: #eeeeea;
+
+  /* validated chart series (light surface) */
+  --color-series-1: #1f8a5f;
+  --color-series-2: #4a72b8;
+  --color-series-3: #b07d1c;
+  --color-grid: #e7e5dc;
+  --color-axis: #c9c6b9;
+
+  --shadow-card: 0 1px 2px rgb(16 34 25 / 0.05), 0 1px 1px rgb(16 34 25 / 0.03);
+  --shadow-pop: 0 8px 28px rgb(16 34 25 / 0.16), 0 2px 6px rgb(16 34 25 / 0.08);
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    min-height: 100%;
+  }
+  body {
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    font-feature-settings: "cv11", "ss01";
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-gold-500);
+    outline-offset: 2px;
+  }
+  table {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: #fff;
+  }
+  .print-full {
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    border: 0 !important;
+  }
+}
+
+.qr-box svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
