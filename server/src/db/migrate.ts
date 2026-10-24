@@ -1,17 +1,6 @@
-import fs from 'node:fs';
-import path from 'node:path';
-import crypto from 'node:crypto';
-import { fileURLToPath } from 'node:url';
+import { sha256 } from '../lib/crypto.js';
 import type { DB } from './connection.js';
-
-function migrationsDir(): string {
-  if (process.env.MIGRATIONS_DIR) return path.resolve(process.env.MIGRATIONS_DIR);
-  const here = path.dirname(fileURLToPath(import.meta.url));
-  const candidates = [path.join(here, 'migrations'), path.join(here, 'db', 'migrations')];
-  const found = candidates.find((c) => fs.existsSync(c));
-  if (!found) throw new Error(`Migrations directory not found (looked in ${candidates.join(', ')})`);
-  return found;
-}
+import { loadMigrations } from './migrationSource.js';
 
 export interface MigrationResult {
   applied: string[];
@@ -24,11 +13,8 @@ export function migrate(db: DB): MigrationResult {
     checksum TEXT NOT NULL,
     applied_at TEXT NOT NULL
   )`);
-  const dir = migrationsDir();
-  const files = fs
-    .readdirSync(dir)
-    .filter((f) => /^\d{4}_.+\.sql$/.test(f))
-    .sort();
+  const migrations = loadMigrations();
+  const files = migrations.map((m) => m.name);
   const appliedRows = db.prepare('SELECT version, checksum FROM schema_migrations').all() as {
     version: string;
     checksum: string;
@@ -36,9 +22,8 @@ export function migrate(db: DB): MigrationResult {
   const applied = new Map(appliedRows.map((r) => [r.version, r.checksum]));
   const newlyApplied: string[] = [];
 
-  for (const file of files) {
-    const sql = fs.readFileSync(path.join(dir, file), 'utf8');
-    const checksum = crypto.createHash('sha256').update(sql).digest('hex');
+  for (const { name: file, sql } of migrations) {
+    const checksum = sha256(sql);
     const previous = applied.get(file);
     if (previous) {
       if (previous !== checksum) {

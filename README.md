@@ -28,6 +28,10 @@ npm run dev            # API on :3000, web client on http://127.0.0.1:5173
 
 To use the gate interface from a phone or tablet on the same network, start with `HOST=0.0.0.0 npm start` and open `http://<your-ip>:3000/gate`. Camera QR scanning in browsers requires HTTPS or `localhost`; over plain LAN HTTP use the simulated scanner or manual reference entry.
 
+### Browser edition (no install)
+
+`npm run build:browser` produces `dist/browser/securegate.html`, a single file that runs the same client **and server code** entirely inside the browser. SQLite runs as WebAssembly, and the synthetic data is kept on that device only. It is meant for trying the prototype from a link; see [docs/BROWSER_EDITION.md](docs/BROWSER_EDITION.md) for how it works and how it differs from the server edition.
+
 ## Demo accounts
 
 | Username | Role | Scope | Use it to show |
@@ -54,6 +58,10 @@ See **[docs/DEMO_GUIDE.md](docs/DEMO_GUIDE.md)** for a scripted 15-minute walkth
 | `npm test` | 101 automated API/business-logic tests (Vitest + Supertest) |
 | `npm run typecheck` | TypeScript checks for server and client |
 | `npm run e2e` | Browser smoke test + responsive screenshots (requires Playwright/Chromium) |
+| `npm run build:browser` | Single-file browser edition: `dist/browser/securegate.html` |
+| `npm run serve:browser` | Serve the browser edition locally on :4310 |
+| `npm run e2e:browser` | Browser-edition smoke test (normal and strict content security policy) |
+| `npx vitest run -c vitest.browser.config.ts` | The server test suite through the browser edition's SQLite/Express/crypto substitutions |
 | `npm run db:migrate` | Apply SQL migrations |
 | `npm run db:seed` | Create the synthetic dataset (idempotent; demo mode only) |
 | `npm run db:reset` | Drop and rebuild the demo dataset (demo mode only) |

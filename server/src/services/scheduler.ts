@@ -179,6 +179,7 @@ export function startScheduler(db: DB, config: AppConfig): () => void {
   };
   tick();
   const handle = setInterval(tick, config.schedulerIntervalSeconds * 1000);
-  handle.unref();
+  // Node timers keep the process alive unless unref'd; browser timers have no unref.
+  (handle as { unref?: () => void }).unref?.();
   return () => clearInterval(handle);
 }
