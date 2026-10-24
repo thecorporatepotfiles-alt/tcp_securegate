@@ -11,7 +11,7 @@
  * Known differences: sql.js binds int32-valued numbers as INTEGER (native: REAL)
  * and has no int64 binding (bigints beyond int32 bind as REAL, beyond 2^53 as
  * TEXT); Statement#readonly is a heuristic; serialize() drops TEMP objects and
- * re-applies only pragmas set through pragma().
+ * re-applies only pragmas set through pragma(); SQLite is not in defensive mode.
  */
 import type { Database as SqlJsDatabase, SqlJsStatic, SqlValue, Statement as SqlJsStatement } from 'sql.js';
 
@@ -61,6 +61,8 @@ const DB_BUSY = 'This database connection is busy executing a query';
 const NESTED_BEGIN = 'cannot start a transaction within a transaction';
 const TOO_MANY = 'Too many parameter values were provided';
 const BIND_TYPES = 'SQLite3 can only bind numbers, strings, bigints, buffers, and null';
+const VACUUM_IN_TX = 'cannot VACUUM from within a transaction';
+const VACUUM_BUSY = 'cannot VACUUM - SQL statements in progress';
 const SAVEPOINT = 'SAVEPOINT `\t_bs3.\t`';
 const RELEASE = 'RELEASE `\t_bs3.\t`';
 const ROLLBACK_TO = 'ROLLBACK TO `\t_bs3.\t`';
@@ -82,8 +84,29 @@ type TaggedError = Error & { sqliteRc?: number };
 
 const isNestedBegin = (e: unknown) => e instanceof Error && e.message === NESTED_BEGIN;
 
+const TRIGGER = 'SQLITE_CONSTRAINT_TRIGGER';
+const PRIMARYKEY = 'SQLITE_CONSTRAINT_PRIMARYKEY';
+const UNIQUE = 'SQLITE_CONSTRAINT_UNIQUE';
+
+/** Columns of the tables whose name, followed by '.', starts ?1 (constraint messages name columns "table.column"). */
+const TABLE_COLUMNS = `SELECT t.schema, t.name, t.wr, t.strict, c.name, c.type, c.pk, c."notnull"
+  FROM pragma_table_list AS t, pragma_table_info(t.name, t.schema) AS c
+  WHERE t.type = 'table' AND substr(?1, 1, length(t.name) + 1) = t.name || '.'`;
+/** Key columns of the unique indexes that ?1 may name ("t.a, t.b", or "index 'x'" for expression indexes). */
+const UNIQUE_INDEXES = `SELECT t.schema, t.name, il.name, il.origin, ii.name
+  FROM pragma_table_list AS t, pragma_index_list(t.name, t.schema) AS il, pragma_index_info(il.name, t.schema) AS ii
+  WHERE t.type = 'table' AND il."unique" AND (?1 GLOB 'index ''*' OR substr(?1, 1, length(t.name) + 1) = t.name || '.')
+  ORDER BY t.schema, t.name, il.seq, ii.seqno`;
+/** A table declares a CHECK constraint whose name or expression text is ?1 ('' for any). */
+const HAS_CHECK = `SELECT 1 FROM (SELECT sql FROM main.sqlite_schema WHERE type = 'table'
+  UNION ALL SELECT sql FROM temp.sqlite_schema WHERE type = 'table') WHERE instr(upper(sql), 'CHECK') AND instr(sql, ?1) LIMIT 1`;
+const FOREIGN_KEYS_ENFORCED = `SELECT 1 FROM pragma_foreign_keys WHERE foreign_keys AND EXISTS
+  (SELECT 1 FROM pragma_table_list AS t, pragma_foreign_key_list(t.name, t.schema) WHERE t.type = 'table')`;
+
 const MIN_SAFE = BigInt(Number.MIN_SAFE_INTEGER);
 const MAX_SAFE = BigInt(Number.MAX_SAFE_INTEGER);
+const MIN_INT64 = -(2n ** 63n);
+const MAX_INT64 = 2n ** 63n - 1n;
 
 const NodeBuffer = (globalThis as { Buffer?: { from(b: ArrayBufferLike, offset: number, length: number): Uint8Array } }).Buffer;
 
@@ -98,13 +121,15 @@ function toSqlValue(v: unknown): SqlValue {
     case 'string':
       return v;
     case 'bigint':
+      if (v < MIN_INT64 || v > MAX_INT64) throw new RangeError('The bound string, buffer, or bigint is too big');
       // sql.js has no int64 binding: exact as a number when safe, otherwise as text.
       return v >= MIN_SAFE && v <= MAX_SAFE ? Number(v) : v.toString();
     case 'undefined':
       return null;
     case 'object':
       if (v === null) return null;
-      if (v instanceof Uint8Array) return v;
+      // better-sqlite3 binds any ArrayBufferView (Node's Buffer check) as a blob of its bytes.
+      if (ArrayBuffer.isView(v)) return v instanceof Uint8Array ? v : new Uint8Array(v.buffer, v.byteOffset, v.byteLength);
   }
   throw new TypeError(BIND_TYPES);
 }
@@ -264,7 +289,10 @@ interface Entry {
 /** Owns the sql.js database and its compiled statements. */
 class Connection {
   db: SqlJsDatabase | null;
+  /** Open iterators (better-sqlite3's "busy" rule). */
   iterators = 0;
+  /** Iterators whose statement is mid-execution (stepped to a row, not yet finished). */
+  active = 0;
   /** LRU of compiled statements keyed by SQL text. */
   private readonly cache = new Map<string, Entry>();
   /** Transaction control and last_insert_rowid() statements (never iterated, never evicted). */
@@ -399,9 +427,23 @@ class Connection {
     }
   }
 
-  /** sql.js has no sqlite3_get_autocommit(): BEGIN fails exactly when a transaction is open. */
+  /**
+   * sql.js has no sqlite3_get_autocommit(): BEGIN fails exactly when a transaction is open. While a
+   * statement is mid-execution the ROLLBACK undoing that BEGIN would abort it (e.g. an INSERT ...
+   * RETURNING being iterated), so VACUUM is used instead: it then fails in both states, with different messages.
+   */
   inTransaction(): boolean {
     if (!this.db) return false;
+    if (this.active > 0) {
+      try {
+        this.stepControl('VACUUM');
+      } catch (e) {
+        if (e instanceof Error && e.message === VACUUM_IN_TX) return true;
+        if (e instanceof Error && e.message === VACUUM_BUSY) return false;
+        throw this.translate(e);
+      }
+      return false;
+    }
     try {
       this.stepControl('BEGIN');
     } catch (e) {
@@ -429,10 +471,13 @@ class Connection {
       if (result && typeof (result as { then?: unknown }).then === 'function') {
         throw new TypeError('Transaction function cannot return a promise');
       }
+      // Native runs COMMIT/ROLLBACK as statements, so an iterator left open makes them throw "busy".
+      this.ensureNoIterators();
       this.run(nested ? RELEASE : 'COMMIT');
       return result;
     } catch (ex) {
       if (this.inTransaction()) {
+        this.ensureNoIterators();
         this.run(nested ? ROLLBACK_TO : 'ROLLBACK');
         if (nested) this.run(RELEASE);
       }
@@ -513,37 +558,115 @@ class Connection {
 
   /** Recover the extended result code better-sqlite3 reports, from the primary code and message. */
   private codeFor(rc: number, message: string): string {
-    if (rc === 19) {
-      if (message.startsWith('UNIQUE constraint failed: ')) return this.uniqueCode(message.slice(26));
-      if (message.startsWith('NOT NULL constraint failed: ')) return 'SQLITE_CONSTRAINT_NOTNULL';
-      if (message.startsWith('CHECK constraint failed')) return 'SQLITE_CONSTRAINT_CHECK';
-      if (message === 'FOREIGN KEY constraint failed') return 'SQLITE_CONSTRAINT_FOREIGNKEY';
-      if (/^cannot store \S+ value in \S+ column /.test(message)) return 'SQLITE_CONSTRAINT_DATATYPE';
-      if (message === 'constraint failed') return 'SQLITE_CONSTRAINT';
-      return 'SQLITE_CONSTRAINT_TRIGGER'; // RAISE(ABORT|FAIL|ROLLBACK, '...') carries a free-form message
-    }
+    if (rc === 19) return this.constraintCode(message);
     if (rc === 4 && message === 'abort due to ROLLBACK') return 'SQLITE_ABORT_ROLLBACK';
     return PRIMARY_CODES[rc] ?? 'SQLITE_ERROR';
   }
 
-  /** "t.a, t.b" names a primary key (rowid alias or not), a plain rowid, or a unique constraint. */
-  private uniqueCode(target: string): string {
-    if (target.startsWith('index ')) return 'SQLITE_CONSTRAINT_UNIQUE';
-    const parts = target.split(', ').map((p) => [p.slice(0, p.indexOf('.')), p.slice(p.indexOf('.') + 1)]);
-    const table = parts[0][0];
-    if (!this.db || parts.some(([t]) => t !== table)) return 'SQLITE_CONSTRAINT_UNIQUE';
-    let columns: [string, number][];
-    try {
-      const res = this.db.exec('SELECT name, pk FROM pragma_table_info(?)', [table]);
-      columns = (res[0]?.values ?? []) as [string, number][];
-    } catch {
-      return 'SQLITE_CONSTRAINT_UNIQUE';
+  /**
+   * A constraint's message names a column, index or CHECK that the schema must contain. Anything else
+   * came from RAISE() in a trigger, whose text is free-form and may imitate those messages.
+   */
+  private constraintCode(message: string): string {
+    let m: RegExpExecArray | null;
+    if (message.startsWith('UNIQUE constraint failed: ')) return this.uniqueCode(message.slice(26));
+    if ((m = /^NOT NULL constraint failed: (.+)$/s.exec(message))) {
+      return this.hasColumn(m[1], (c) => c.notnull) ? 'SQLITE_CONSTRAINT_NOTNULL' : TRIGGER;
     }
-    const failed = parts.map(([, c]) => c);
-    if (failed.length === 1 && failed[0] === 'rowid' && !columns.some(([name]) => name === 'rowid')) return 'SQLITE_CONSTRAINT_ROWID';
-    const pk = columns.filter(([, p]) => p > 0).map(([name]) => name);
-    return pk.length === failed.length && failed.every((c) => pk.includes(c)) ? 'SQLITE_CONSTRAINT_PRIMARYKEY' : 'SQLITE_CONSTRAINT_UNIQUE';
+    if ((m = /^cannot store \S+ value in \S+ column (.+)$/s.exec(message))) {
+      return this.hasColumn(m[1], (c) => c.strict) ? 'SQLITE_CONSTRAINT_DATATYPE' : TRIGGER;
+    }
+    if ((m = /^CHECK constraint failed(?:: (.+))?$/s.exec(message))) {
+      return this.lookup(HAS_CHECK, [m[1] ?? ''])?.length !== 0 ? 'SQLITE_CONSTRAINT_CHECK' : TRIGGER;
+    }
+    if (message === 'FOREIGN KEY constraint failed') {
+      return this.lookup(FOREIGN_KEYS_ENFORCED, [])?.length !== 0 ? 'SQLITE_CONSTRAINT_FOREIGNKEY' : TRIGGER;
+    }
+    if (message === 'constraint failed') return 'SQLITE_CONSTRAINT';
+    return TRIGGER;
   }
+
+  /** Rows of a schema query, or null if it fails (then the message is taken at its word). */
+  private lookup(sql: string, params: SqlValue[]): SqlValue[][] | null {
+    try {
+      return this.ensureOpen().exec(sql, params)[0]?.values ?? [];
+    } catch {
+      return null;
+    }
+  }
+
+  private columns(target: string): ColumnInfo[] | null {
+    return (
+      this.lookup(TABLE_COLUMNS, [target])?.map(([schema, table, wr, strict, name, type, pk, notnull]) => ({
+        schema: schema as string,
+        table: table as string,
+        wr: !!wr,
+        strict: !!strict,
+        name: name as string,
+        type: type as string,
+        pk: pk as number,
+        notnull: !!notnull,
+      })) ?? null
+    );
+  }
+
+  /** target is "table.column" for a column satisfying test. */
+  private hasColumn(target: string, test: (c: ColumnInfo) => boolean): boolean {
+    const columns = this.columns(target);
+    return !columns || columns.some((c) => `${c.table}.${c.name}` === target && test(c));
+  }
+
+  /**
+   * SQLite names a failed unique index "t.a, t.b" (key columns in order) or "index 'x'" (expression
+   * index), and a rowid clash after the INTEGER PRIMARY KEY column or as "t.rowid" when there is none.
+   */
+  private uniqueCode(target: string): string {
+    const rows = this.lookup(UNIQUE_INDEXES, [target]) as [string, string, string, string, string | null][] | null;
+    const columns = this.columns(target);
+    if (!rows || !columns) return UNIQUE;
+    const indexes = new Map<string, { table: string; name: string; origin: string; keys: (string | null)[] }>();
+    for (const [schema, table, name, origin, key] of rows) {
+      const id = `${schema}\0${name}`;
+      let index = indexes.get(id);
+      if (!index) indexes.set(id, (index = { table: `${schema}\0${table}`, name, origin, keys: [] }));
+      index.keys.push(key);
+    }
+    let code: string | null = null;
+    const pkIndexed = new Set<string>();
+    for (const { table, name, origin, keys } of indexes.values()) {
+      if (origin === 'pk') pkIndexed.add(table);
+      const tableName = table.slice(table.indexOf('\0') + 1);
+      const text = keys.includes(null) ? `index '${name.replaceAll("'", "''")}'` : keys.map((k) => `${tableName}.${k}`).join(', ');
+      if (text === target) code = origin === 'pk' ? PRIMARYKEY : (code ?? UNIQUE);
+    }
+    if (code) return code;
+    const tables = new Map<string, ColumnInfo[]>();
+    for (const c of columns) {
+      const id = `${c.schema}\0${c.table}`;
+      if (!tables.has(id)) tables.set(id, []);
+      tables.get(id)!.push(c);
+    }
+    for (const [id, cols] of tables) {
+      const { table, wr } = cols[0];
+      if (wr) continue;
+      // An INTEGER PRIMARY KEY is the rowid unless it needed an index (e.g. declared DESC).
+      const pk = cols.filter((c) => c.pk > 0);
+      const alias = pk.length === 1 && pk[0].type.toUpperCase() === 'INTEGER' && !pkIndexed.has(id) ? pk[0].name : null;
+      if (target === `${table}.${alias ?? 'rowid'}`) return alias ? PRIMARYKEY : 'SQLITE_CONSTRAINT_ROWID';
+    }
+    return TRIGGER;
+  }
+}
+
+interface ColumnInfo {
+  schema: string;
+  table: string;
+  wr: boolean;
+  strict: boolean;
+  name: string;
+  type: string;
+  pk: number;
+  notnull: boolean;
 }
 
 export interface RunResult {
@@ -582,8 +705,11 @@ export class Statement {
     const raw = this.#conn.checkout(this.source);
     try {
       this.#bind(raw, params);
-      raw.step();
-      raw.reset(); // completes the statement (e.g. RETURNING) so changes() reflects it
+      // Native run() throws errors reported by sqlite3_reset(), e.g. a deferred foreign key failing at the
+      // implicit COMMIT, but sql.js's reset() drops them; stepping a write to the end raises them instead
+      // (only buffered RETURNING rows remain by then).
+      if (raw.step() && !this.#info.readonly) while (raw.step());
+      raw.reset(); // completes the statement so changes() reflects it
       return { changes: this.#info.dml ? db.getRowsModified() : 0, lastInsertRowid: this.#conn.lastInsertRowid() };
     } catch (e) {
       throw this.#conn.translate(e);
@@ -634,19 +760,25 @@ export class Statement {
     this.#busy = true;
     conn.iterators++;
     let done = false;
+    let active = false;
     let names: string[] | null = null;
     const finish = () => {
       if (done) return;
       done = true;
       this.#busy = false;
       conn.iterators--;
+      if (active) conn.active--;
       conn.release(this.source, raw);
     };
     const iterator: IterableIterator<unknown> = {
       next: () => {
         if (done) return { done: true, value: undefined };
         try {
-          if (raw.step()) return { done: false, value: this.#row(raw.get(), (names ??= raw.getColumnNames())) };
+          if (raw.step()) {
+            if (!active) conn.active++;
+            active = true;
+            return { done: false, value: this.#row(raw.get(), (names ??= raw.getColumnNames())) };
+          }
         } catch (e) {
           const err = conn.translate(e);
           finish();
@@ -716,11 +848,18 @@ export class Statement {
       if (anon > count) throw new RangeError(TOO_MANY);
       return anon - 1;
     };
+    // As natively, a value's type is checked before its parameter index.
+    const bindAnon = (v: unknown) => {
+      const value = toSqlValue(v);
+      values[nextAnon()] = value;
+    };
     for (const arg of params) {
       if (Array.isArray(arg)) {
-        for (const v of arg) values[nextAnon()] = toSqlValue(v);
+        arg.forEach(bindAnon);
         bound += arg.length;
-      } else if (isPlainObject(arg)) {
+        continue;
+      }
+      if (isPlainObject(arg)) {
         if (boundObject) throw new TypeError('You cannot specify named parameters in two different objects');
         boundObject = true;
         for (let i = 0; i < count; i++) {
@@ -730,10 +869,14 @@ export class Statement {
           values[i] = toSqlValue(arg[key]);
           bound++;
         }
-      } else {
-        values[nextAnon()] = toSqlValue(arg);
-        bound++;
+        continue;
       }
+      const isObject = (typeof arg === 'object' && arg !== null) || typeof arg === 'function';
+      if (isObject && !ArrayBuffer.isView(arg) && slots.some((s) => s !== null)) {
+        throw new TypeError('Named parameters can only be passed within plain objects');
+      }
+      bindAnon(arg);
+      bound++;
     }
     if (bound < count) {
       if (!boundObject && slots.some((s) => s !== null)) throw new TypeError('Missing named parameters');
@@ -838,9 +981,9 @@ class Database {
     conn.ensureNoIterators();
     const assignment = /^\s*(?:(\w+)\.)?(\w+)\s*=\s*(.*?)[\s;]*$/s.exec(source);
     const name = assignment?.[2].toLowerCase();
-    // As for SQLite's own in-memory databases, journal modes other than MEMORY/OFF are ignored.
-    const ignored = name === 'journal_mode' && !/^['"]?(memory|off)['"]?$/i.test(assignment![3]);
-    const { names, rows } = conn.query(ignored ? 'PRAGMA journal_mode' : `PRAGMA ${source}`);
+    // In-memory databases stay in MEMORY journal mode; better-sqlite3's defensive mode also refuses OFF.
+    const ignored = name === 'journal_mode' && !/^['"]?memory['"]?$/i.test(assignment![3]);
+    const { names, rows } = conn.query(ignored ? `PRAGMA ${assignment![1] ? `${assignment![1]}.` : ''}journal_mode` : `PRAGMA ${source}`);
     if (assignment && !ignored) conn.recordPragma(assignment[1]?.toLowerCase(), name!, source);
     if (simple) return rows.length ? out(rows[0][0]) : undefined;
     return rows.map((values) => {

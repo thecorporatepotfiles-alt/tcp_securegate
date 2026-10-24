@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ApiError, api } from '../lib/api';
+import { useGoBack } from '../lib/browserRouting';
 import { useLocationScope } from '../lib/location';
 import { addDaysStr, nowLocalTime, todayLocal, zonedIso } from '../lib/format';
 import type { Row } from '../lib/types';
@@ -16,6 +17,7 @@ interface ContractorHit { id: number; reference: string; name: string; company: 
 
 export default function TempAccessNewPage() {
   const navigate = useNavigate();
+  const goBack = useGoBack('/temporary-access');
   const { locations, locationId } = useLocationScope();
   const today = todayLocal();
   const [holderType, setHolderType] = useState<HolderType>('PERSONNEL');
@@ -189,7 +191,7 @@ export default function TempAccessNewPage() {
           </div>
         </Card>
         <div className="flex justify-end gap-2">
-          <Button onClick={() => navigate(-1)}>Cancel</Button>
+          <Button onClick={goBack}>Cancel</Button>
           <Button type="submit" variant="primary" size="lg" loading={save.isPending}>
             Issue temporary access
           </Button>

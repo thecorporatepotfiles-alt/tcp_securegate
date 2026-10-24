@@ -4,6 +4,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { clock } from '../src/clock.js';
+import { hashPassword, verifyPassword } from '../src/lib/crypto.js';
 import { freshPersonnel, gateId, locationId, record, setup, userId, verify, type TestEnv } from './helpers.js';
 
 let env: TestEnv;
@@ -214,5 +215,17 @@ describe('data minimization', () => {
     const v = await verify(guard, gateId(env.db, 'A2'), 'VEHICLE', token);
     const row = env.db.prepare('SELECT input_display FROM verification_attempts WHERE id = ?').get(v.attemptId) as { input_display: string };
     expect(row.input_display).not.toContain('AAAAAAAA');
+  });
+});
+
+describe('password hashes', () => {
+  it('a stored hash with an empty key part never verifies', async () => {
+    const salt = hashPassword('pw').split('$')[4];
+    const tampered = ['scrypt', 16384, 8, 1, salt, ''].join('$');
+    expect(verifyPassword('anything', tampered)).toBe(false);
+    // Signing in against such a record fails too.
+    env.db.prepare('UPDATE users SET password_hash = ? WHERE username = ?').run(tampered, 'alpha.guard');
+    const res = await env.anon().post('/auth/login', { username: 'alpha.guard', password: 'anything' });
+    expect(res.status).toBe(401);
   });
 });

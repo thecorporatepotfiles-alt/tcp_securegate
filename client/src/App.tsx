@@ -83,10 +83,11 @@ function Home() {
 }
 
 function RequireSession({ children }: { children: ReactNode }) {
-  const { me, loading } = useAuth();
+  const { me, loading, signedOut } = useAuth();
   const location = useLocation();
   if (loading) return <Spinner label="Loading SecureGate…" />;
-  if (!me) return <Navigate to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} replace />;
+  // After a deliberate sign-out the next person should start at their own home page, not the previous user's.
+  if (!me) return <Navigate to={signedOut ? '/login' : `/login?next=${encodeURIComponent(location.pathname + location.search)}`} replace />;
   return <>{children}</>;
 }
 

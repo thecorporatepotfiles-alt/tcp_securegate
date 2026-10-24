@@ -13,6 +13,8 @@ interface AuthState {
   refresh: () => Promise<void>;
   logout: () => Promise<void>;
   expiredReason: string | null;
+  /** True after an explicit sign-out, until a session is present again. */
+  signedOut: boolean;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -20,6 +22,9 @@ const AuthContext = createContext<AuthState | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const qc = useQueryClient();
   const [expiredReason, setExpiredReason] = useState<string | null>(null);
+  // Time of the last explicit sign-out: session data fetched before it belongs to the previous user and is hidden
+  // in the same render as the navigation to sign-in. Data fetched afterwards (e.g. a sign-in in another tab) shows.
+  const [signedOutAt, setSignedOutAt] = useState<number | null>(null);
   const configQ = useQuery({ queryKey: ['config'], queryFn: () => api.get<AppConfigInfo>('/config'), staleTime: 60_000 });
   const meQ = useQuery({
     queryKey: ['me'],
@@ -50,6 +55,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refresh = useCallback(async () => {
     setExpiredReason(null);
+    setSignedOutAt(null);
     await qc.invalidateQueries({ queryKey: ['me'] });
     await qc.refetchQueries({ queryKey: ['me'] });
   }, [qc]);
@@ -58,6 +64,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       await api.post('/auth/logout');
     } finally {
+      // Clearing the cache alone left this provider's observers on the removed queries, so the old user stayed
+      // visible and the sign-in page redirected straight back home. The state change also re-attaches them.
+      setSignedOutAt(Date.now());
       qc.clear();
       qc.setQueryData(['me'], null);
       qc.invalidateQueries({ queryKey: ['config'] });
@@ -65,17 +74,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [qc]);
 
   const value = useMemo<AuthState>(() => {
-    const perms = new Set(meQ.data?.permissions ?? []);
+    const me = signedOutAt !== null && meQ.dataUpdatedAt <= signedOutAt ? null : meQ.data;
+    const perms = new Set(me?.permissions ?? []);
     return {
       config: configQ.data,
-      me: meQ.data,
+      me,
       loading: meQ.isLoading || configQ.isLoading,
       can: (...p: Permission[]) => p.some((x) => perms.has(x)),
       refresh,
       logout,
       expiredReason,
+      signedOut: signedOutAt !== null && !me,
     };
-  }, [configQ.data, meQ.data, meQ.isLoading, configQ.isLoading, refresh, logout, expiredReason]);
+  }, [configQ.data, meQ.data, meQ.dataUpdatedAt, meQ.isLoading, configQ.isLoading, refresh, logout, expiredReason, signedOutAt]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

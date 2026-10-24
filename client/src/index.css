@@ -1,4 +1,6 @@
 @import "tailwindcss";
+/* Scan this directory explicitly: the browser-edition build runs Vite from browser/, outside the default source root. */
+@source ".";
 
 @theme {
   --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;

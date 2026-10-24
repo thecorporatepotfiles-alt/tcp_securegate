@@ -79,6 +79,25 @@ describe('crypto equivalence: node:crypto vs @noble/hashes', () => {
       }
     });
 
+    it('decodes stored base64url exactly like Buffer.from(s, "base64url"), including non-ASCII and surrogates', () => {
+      // The key is derived from Node's own decoding of the salt text, so the browser build verifies it
+      // only if it decodes that text to the same bytes. Cheap cost parameters keep thousands of cases fast.
+      const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+      const odd = ['=', '+', '/', ' ', '\n', '.', '\u0000', 'é', 'Ā', 'Ł', 'Ľ', '一', 'ａ', '\ud83d', '\udd10', '\u{1F510}'];
+      const salts = ['QU\u{1F510}JD', 'QUŁJD', 'QUĽJD', 'QUéJD', 'QUJD\ud83d', 'Q', ''];
+      for (let i = 0; i < 2000; i++) {
+        let s = '';
+        for (let j = i % 30; j > 0; j--) s += Math.random() < 0.6 ? alphabet[nodeCrypto.randomInt(64)] : odd[nodeCrypto.randomInt(odd.length)];
+        salts.push(s);
+      }
+      for (const salt of salts) {
+        const key = nodeCrypto.scryptSync('pw', Buffer.from(salt, 'base64url'), 16, { N: 2, r: 1, p: 1 });
+        const stored = ['scrypt', 2, 1, 1, salt, key.toString('base64url')].join('$');
+        expect(nodeImpl.verifyPassword('pw', stored)).toBe(true);
+        expect(browserImpl.verifyPassword('pw', stored), JSON.stringify(salt)).toBe(true);
+      }
+    });
+
     it('rejects invalid cost parameters in both (throws), e.g. N not a power of two or over the memory cap', () => {
       const [, , , , salt, hash] = nodeImpl.hashPassword('pw').split('$');
       for (const params of [
@@ -91,11 +110,10 @@ describe('crypto equivalence: node:crypto vs @noble/hashes', () => {
       }
     });
 
-    it('deliberate divergence: an empty stored key never verifies in the browser build', () => {
+    it('a stored hash with an empty key never verifies in either build', () => {
       const [, , , , salt] = nodeImpl.hashPassword('pw').split('$');
       const s = ['scrypt', 16384, 8, 1, salt, ''].join('$');
-      // node:crypto derives a zero-length key and compares two empty buffers as equal.
-      expect(nodeImpl.verifyPassword('anything', s)).toBe(true);
+      expect(nodeImpl.verifyPassword('anything', s)).toBe(false);
       expect(browserImpl.verifyPassword('anything', s)).toBe(false);
     });
 

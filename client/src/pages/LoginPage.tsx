@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
+import { Navigate, useSearchParams } from 'react-router-dom';
 import { ArrowRight, Lock, ShieldCheck } from 'lucide-react';
 import { api, errorMessage } from '../lib/api';
 import { useAuth } from '../lib/auth';
@@ -23,7 +23,6 @@ const ROLE_BLURB: Record<RoleCode, string> = {
 export default function LoginPage() {
   const { me, config, refresh, expiredReason, can } = useAuth();
   const [sp] = useSearchParams();
-  const navigate = useNavigate();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -36,10 +35,9 @@ export default function LoginPage() {
 
   if (me) return <Navigate to={sp.get('next') ?? homeFor((p) => can(p))} replace />;
 
-  const finish = async () => {
-    await refresh();
-    navigate(sp.get('next') ?? '/', { replace: true });
-  };
+  // Once the session loads, the redirect above takes over. A second navigate() here raced with it and
+  // could leave the app on '/' with the home redirect already spent (always so with the in-memory router).
+  const finish = () => refresh();
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();

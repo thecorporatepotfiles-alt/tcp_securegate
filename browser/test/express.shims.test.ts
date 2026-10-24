@@ -287,6 +287,15 @@ describe('query parser', () => {
     for (const s of samples) expect({ ...parseQueryString(s) }, s).toEqual({ ...querystring.parse(s) });
     expect(Object.keys(parseQueryString(Array.from({ length: 1005 }, (_, i) => `k${i}=1`).join('&')))).toHaveLength(1000);
   });
+
+  it('matches node:querystring.parse on raw non-ASCII, malformed escapes and the maxKeys count', () => {
+    const pool = ['a', '=', '&', '+', '%', '%4', '%41', '%zz', '%E2%9C%93', '%C3', '%FF', 'é', 'Ł', '\u{1F510}', '\ud800', '__proto__', ' '];
+    const samples = ['__proto__%zzaéé%41]', 'é%zz=é%4+1', '%41%42=é%zz', '&'.repeat(999) + 'a=1', '&'.repeat(1000) + 'a=1'];
+    samples.push(Array.from({ length: 1500 }, (_, i) => (i % 2 ? '' : `k${i}=1`)).join('&'));
+    for (let i = 0; i < 3000; i++) samples.push(Array.from({ length: i % 12 }, (_, j) => pool[(i * 7 + j * 13 + (i >> 3)) % pool.length]).join(''));
+    for (const s of samples) expect(JSON.stringify({ ...parseQueryString(s) }), s).toBe(JSON.stringify({ ...querystring.parse(s) }));
+    expect(Object.keys(parseQueryString(samples[5]))).toHaveLength(500);
+  });
 });
 
 describe('cookies', () => {
@@ -405,6 +414,10 @@ describe('node builtin stubs', () => {
       expect(shimUrl.pathToFileURL(p).href).toBe(nodeUrl.pathToFileURL(p).href);
       expect(shimUrl.fileURLToPath(nodeUrl.pathToFileURL(p).href)).toBe(p);
     }
+    // Relative and unnormalised paths are resolved against the working directory (process.cwd() under Node).
+    const odd = ['//a%20ab#', '/a//%20#', 'rel/x', '', '.', './', '/a/', '/a/..', '/C|/x', '/C:/x', '/x[]^`{|}~"<>\\y', '/x\u00e9\u{1F510}\ud800', '/x\n\r\t\u0000 ', '/x\u0001\u001f', '/x/\u0001'];
+    for (let c = 0; c < 0x100; c++) odd.push(`/x${String.fromCharCode(c)}y`);
+    for (const p of odd) expect(shimUrl.pathToFileURL(p).href, JSON.stringify(p)).toBe(nodeUrl.pathToFileURL(p).href);
     expect(() => shimUrl.fileURLToPath('https://x/y')).toThrow(TypeError);
     expect(shimUrl.default.fileURLToPath('file:///tmp/a%20b')).toBe('/tmp/a b');
   });

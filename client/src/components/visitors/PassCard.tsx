@@ -65,7 +65,8 @@ export function PassCard({
       setCopy('copied');
       setTimeout(() => setCopy('idle'), 1500);
     } catch {
-      // Clipboard access can be blocked (e.g. inside an embedded frame): select the code for a manual copy.
+      if (!BROWSER_EDITION) return setCopy('idle');
+      // Clipboard access is often blocked inside the embedded frame: select the code for a manual copy.
       setCopy('manual');
       const el = codeRef.current;
       const sel = window.getSelection();

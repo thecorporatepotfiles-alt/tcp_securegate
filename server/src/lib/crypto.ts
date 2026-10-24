@@ -16,6 +16,8 @@ export function verifyPassword(password: string, stored: string): boolean {
   if (parts.length !== 6 || parts[0] !== 'scrypt') return false;
   const [, n, r, p, saltB64, hashB64] = parts;
   const expected = Buffer.from(hashB64, 'base64url');
+  // A zero-length key would compare two empty buffers as equal and accept any password.
+  if (expected.length === 0) return false;
   const actual = crypto.scryptSync(password, Buffer.from(saltB64, 'base64url'), expected.length, {
     N: Number(n),
     r: Number(r),

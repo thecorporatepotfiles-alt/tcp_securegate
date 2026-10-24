@@ -237,43 +237,122 @@ function queryStringOf(url: string): string {
   return url.slice(q + 1, h === -1 ? undefined : h);
 }
 
-/** querystring.unescape: decodeURIComponent, falling back to byte-wise %XX decoding (invalid escapes kept literally). */
+const isHexCode = (c: number) => (c >= 48 && c <= 57) || (c >= 65 && c <= 70) || (c >= 97 && c <= 102);
+
+/**
+ * querystring.unescape: decodeURIComponent, falling back to Node's unescapeBuffer, which decodes valid
+ * %XX escapes, keeps invalid ones literally and (like Buffer) keeps only the low byte of other code units.
+ */
 function unescapeQs(s: string): string {
   try {
     return decodeURIComponent(s);
   } catch {
-    const bytes: number[] = [];
+    const out = new Uint8Array(s.length);
+    let n = 0;
     for (let i = 0; i < s.length; i++) {
-      if (s[i] === '%' && /^[0-9a-fA-F]{2}$/.test(s.slice(i + 1, i + 3))) {
-        bytes.push(parseInt(s.slice(i + 1, i + 3), 16));
+      const c = s.charCodeAt(i);
+      if (c === 37 /* % */ && i < s.length - 2 && isHexCode(s.charCodeAt(i + 1)) && isHexCode(s.charCodeAt(i + 2))) {
+        out[n++] = parseInt(s.slice(i + 1, i + 3), 16);
         i += 2;
-      } else {
-        const cp = s.codePointAt(i)!;
-        if (cp > 0xffff) i++;
-        bytes.push(...encoder.encode(String.fromCodePoint(cp)));
-      }
+      } else out[n++] = c;
     }
-    return decodeBytes(new Uint8Array(bytes));
+    return decodeBytes(out.subarray(0, n));
   }
 }
 
-/** Express 5's default 'simple' query parser (node:querystring.parse semantics). */
+function addQueryPair(obj: Query, key: string, value: string, keyEncoded: boolean, valEncoded: boolean): void {
+  if (key.length > 0 && keyEncoded) key = unescapeQs(key);
+  if (value.length > 0 && valEncoded) value = unescapeQs(value);
+  const prev = obj[key];
+  if (prev === undefined) obj[key] = value;
+  else if (Array.isArray(prev)) prev.push(value);
+  else obj[key] = [prev, value];
+}
+
+/**
+ * Express 5's default 'simple' query parser: a port of node:querystring.parse with the default
+ * '&' / '=' separators and maxKeys 1000 (empty segments count towards it). Like Node, a key or value
+ * is only unescaped once a valid %XX escape has been seen in it, and '+' becomes a space.
+ */
 export function parseQueryString(qs: string): Query {
-  const out: Query = Object.create(null);
-  if (!qs) return out;
-  let pairs = 0;
-  for (const part of qs.split('&')) {
-    if (!part) continue;
-    if (++pairs > 1000) break; // querystring maxKeys
-    const eq = part.indexOf('=');
-    const key = unescapeQs((eq === -1 ? part : part.slice(0, eq)).replace(/\+/g, ' '));
-    const value = eq === -1 ? '' : unescapeQs(part.slice(eq + 1).replace(/\+/g, ' '));
-    const prev = out[key];
-    if (prev === undefined) out[key] = value;
-    else if (Array.isArray(prev)) prev.push(value);
-    else out[key] = [prev, value];
+  const obj: Query = Object.create(null);
+  if (!qs) return obj;
+  let pairs = 1000;
+  let lastPos = 0;
+  let inValue = false;
+  let key = '';
+  let value = '';
+  let keyEncoded = false;
+  let valEncoded = false;
+  let encodeCheck = 0;
+  for (let i = 0; i < qs.length; ++i) {
+    const code = qs.charCodeAt(i);
+    if (code === 38 /* & */) {
+      if (!inValue) {
+        if (lastPos < i) key += qs.slice(lastPos, i);
+        else if (key.length === 0) {
+          if (--pairs === 0) return obj;
+          lastPos = i + 1;
+          continue;
+        }
+      } else if (lastPos < i) value += qs.slice(lastPos, i);
+      addQueryPair(obj, key, value, keyEncoded, valEncoded);
+      if (--pairs === 0) return obj;
+      keyEncoded = valEncoded = inValue = false;
+      key = value = '';
+      encodeCheck = 0;
+      lastPos = i + 1;
+      continue;
+    }
+    if (!inValue) {
+      if (code === 61 /* = */) {
+        if (lastPos < i) key += qs.slice(lastPos, i);
+        encodeCheck = 0;
+        lastPos = i + 1;
+        inValue = true;
+        continue;
+      }
+      if (!keyEncoded) {
+        if (code === 37 /* % */) {
+          encodeCheck = 1;
+          continue;
+        } else if (encodeCheck > 0) {
+          if (isHexCode(code)) {
+            if (++encodeCheck === 3) keyEncoded = true;
+            continue;
+          }
+          encodeCheck = 0;
+        }
+      }
+      if (code === 43 /* + */) {
+        if (lastPos < i) key += qs.slice(lastPos, i);
+        key += ' ';
+        lastPos = i + 1;
+        continue;
+      }
+    }
+    // Node runs this branch for key characters too once the key is known to be encoded.
+    if (code === 43 /* + */) {
+      if (lastPos < i) value += qs.slice(lastPos, i);
+      value += ' ';
+      lastPos = i + 1;
+    } else if (!valEncoded) {
+      if (code === 37 /* % */) encodeCheck = 1;
+      else if (encodeCheck > 0) {
+        if (isHexCode(code)) {
+          if (++encodeCheck === 3) valEncoded = true;
+        } else encodeCheck = 0;
+      }
+    }
   }
-  return out;
+  if (lastPos < qs.length) {
+    if (inValue) value += qs.slice(lastPos);
+    else key += qs.slice(lastPos);
+  } else if (!inValue && key.length === 0) {
+    return obj;
+  }
+  addQueryPair(obj, key, value, keyEncoded, valEncoded);
+  return obj;
 }
 
 /** Media type + parameters of a Content-Type value, or null when it cannot be parsed. */

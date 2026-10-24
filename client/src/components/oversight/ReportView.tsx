@@ -76,6 +76,7 @@ export function ReportView({ reportKey, header }: { reportKey: string; header: (
   }));
 
   const canSaveFiles = useCanSaveFiles();
+  // Browser edition: the viewer's save confirmation stays open a while, so show progress and block repeat clicks.
   const [exporting, setExporting] = useState(false);
   const exportCsv = async () => {
     setExporting(true);
@@ -93,7 +94,7 @@ export function ReportView({ reportKey, header }: { reportKey: string; header: (
   const actions = (
     <>
       {can('reports.export') && canSaveFiles && (
-        <Button icon={<Download className="size-4" />} onClick={exportCsv} loading={exporting} disabled={!def}>
+        <Button icon={<Download className="size-4" />} onClick={exportCsv} loading={BROWSER_EDITION && exporting} disabled={!def}>
           Export CSV
         </Button>
       )}

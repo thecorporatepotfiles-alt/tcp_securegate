@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
+import { useGoBack } from '../lib/browserRouting';
 import { useAuth } from '../lib/auth';
 import { useLocationScope } from '../lib/location';
 import type { Row } from '../lib/types';
@@ -11,6 +12,7 @@ import { fieldErrors } from '../components/ops/common';
 
 export default function DeliveryNewPage() {
   const navigate = useNavigate();
+  const goBack = useGoBack('/deliveries');
   const { me } = useAuth();
   const { locations, locationId } = useLocationScope();
   const categories = me?.options.deliveryCategories ?? [];
@@ -105,7 +107,7 @@ export default function DeliveryNewPage() {
             Authorization to proceed is not proof of inspection or acceptance. Any package handling and inspection follow the establishment's approved procedures.
           </Notice>
           <div className="mt-6 flex justify-end gap-2 border-t border-line pt-4">
-            <Button onClick={() => navigate(-1)}>Cancel</Button>
+            <Button onClick={goBack}>Cancel</Button>
             <Button type="submit" variant="primary" loading={save.isPending}>
               Register delivery
             </Button>

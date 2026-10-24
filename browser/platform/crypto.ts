@@ -22,7 +22,7 @@ const SCRYPT_MAXMEM = 32 * 1024 * 1024;
 // ---------------------------------------------------------------------------
 
 const B64URL = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
-const DECODE = new Int8Array(128).fill(-1);
+const DECODE = new Int8Array(256).fill(-1);
 for (let i = 0; i < 64; i++) DECODE[B64URL.charCodeAt(i)] = i;
 // Node's base64url decoder also accepts the standard alphabet.
 DECODE['+'.charCodeAt(0)] = 62;
@@ -50,7 +50,9 @@ function toBase64Url(bytes: Uint8Array): string {
 /**
  * `Buffer.from(str, 'base64url')`, including Node's leniency: characters outside
  * the (standard or URL-safe) alphabet are skipped, decoding stops at the first
- * '=', and a dangling single sextet is dropped.
+ * '=', and a dangling single sextet is dropped. Like Node's decoder, each UTF-16
+ * code unit is read by its low byte only (so e.g. U+0141 counts as 'A' and the
+ * high surrogate U+D83D as '=').
  */
 function fromBase64Url(str: string): Uint8Array {
   const out = new Uint8Array(Math.floor((str.length * 3) / 4) + 3);
@@ -58,9 +60,9 @@ function fromBase64Url(str: string): Uint8Array {
   let acc = 0;
   let bits = 0;
   for (let i = 0; i < str.length; i++) {
-    const c = str.charCodeAt(i);
+    const c = str.charCodeAt(i) & 0xff;
     if (c === 61 /* '=' */) break;
-    const v = c < 128 ? DECODE[c] : -1;
+    const v = DECODE[c];
     if (v < 0) continue;
     acc = (acc << 6) | v;
     bits += 6;

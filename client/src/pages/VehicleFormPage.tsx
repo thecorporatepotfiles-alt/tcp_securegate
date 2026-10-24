@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { ApiError, api } from '../lib/api';
+import { useGoBack } from '../lib/browserRouting';
 import { useAuth } from '../lib/auth';
 import { useLocationScope } from '../lib/location';
 import { titleCase } from '../lib/format';
@@ -16,6 +17,7 @@ export default function VehicleFormPage() {
   const params = useParams();
   const editId = params.id ? Number(params.id) : null;
   const navigate = useNavigate();
+  const goBack = useGoBack(editId ? `/vehicles/${editId}` : '/vehicles');
   const { me } = useAuth();
   const { locations, locationId } = useLocationScope();
   const categories = me?.options.vehicleCategories ?? [];
@@ -197,7 +199,7 @@ export default function VehicleFormPage() {
             </Notice>
           )}
           <div className="mt-6 flex justify-end gap-2 border-t border-line pt-4">
-            <Button onClick={() => navigate(-1)}>Cancel</Button>
+            <Button onClick={goBack}>Cancel</Button>
             <Button type="submit" variant="primary" loading={save.isPending}>
               {editId ? 'Save changes' : 'Register vehicle'}
             </Button>

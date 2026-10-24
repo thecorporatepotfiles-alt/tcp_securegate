@@ -113,6 +113,58 @@ describe('better-sqlite3 shim (sql.js)', () => {
       expect(result).toMatchObject({ error: 'SqliteError', name: 'SqliteError', code });
     });
 
+    it('RAISE() text imitating a constraint message, and names containing dots, commas and quotes', () => {
+      const raised = [
+        'NOT NULL constraint failed: fake',
+        'NOT NULL constraint failed: p.missing',
+        'NOT NULL constraint failed: p.n',
+        'UNIQUE constraint failed: p.n',
+        'UNIQUE constraint failed: p.code, p.n',
+        "UNIQUE constraint failed: index 'missing'",
+        'UNIQUE constraint failed: ao.rowid',
+        'CHECK constraint failed: not a check in the schema',
+        'cannot store TEXT value in INTEGER column p.n',
+      ];
+      const result = expectSameAsNative((db) => {
+        db.exec(`
+          CREATE TABLE "a.b" (id TEXT PRIMARY KEY, "c, a.b.d" UNIQUE);
+          CREATE TABLE "q'x" (id INTEGER PRIMARY KEY DESC, v);
+          CREATE UNIQUE INDEX "nr'upper" ON nr (upper(b));
+          CREATE TEMP TABLE tt (code TEXT PRIMARY KEY, u UNIQUE);
+          INSERT INTO "a.b" VALUES ('x', 'y');
+          INSERT INTO "q'x" (rowid, id) VALUES (5, 1);
+          INSERT INTO tt VALUES ('a', 1);
+          CREATE TABLE fake (i);
+        `);
+        raised.forEach((text, i) =>
+          db.exec(`CREATE TRIGGER fake_${i} BEFORE INSERT ON fake WHEN NEW.i = ${i} BEGIN SELECT RAISE(ABORT, '${text.replaceAll("'", "''")}'); END`),
+        );
+        const fails = (sql: string) => outcome(() => db.prepare(sql).run());
+        return {
+          raised: raised.map((_, i) => fails(`INSERT INTO fake VALUES (${i})`)),
+          real: [
+            fails(`INSERT INTO "a.b" VALUES ('x', 'z')`),
+            fails(`INSERT INTO "a.b" VALUES ('w', 'y')`),
+            fails(`INSERT INTO "q'x" (rowid, id) VALUES (6, 1)`),
+            fails(`INSERT INTO "q'x" (rowid, id) VALUES (5, 2)`),
+            fails(`INSERT INTO nr VALUES ('zz', 1)`),
+            fails(`INSERT INTO tt VALUES ('a', 2)`),
+            fails(`INSERT INTO tt VALUES ('b', 1)`),
+          ],
+        };
+      }) as { value: { raised: { code: string }[]; real: { code: string }[] } };
+      expect(result.value.raised.map((r) => r.code)).toEqual(raised.map(() => 'SQLITE_CONSTRAINT_TRIGGER'));
+      expect(result.value.real.map((r) => r.code)).toEqual([
+        'SQLITE_CONSTRAINT_PRIMARYKEY',
+        'SQLITE_CONSTRAINT_UNIQUE',
+        'SQLITE_CONSTRAINT_PRIMARYKEY',
+        'SQLITE_CONSTRAINT_ROWID',
+        'SQLITE_CONSTRAINT_UNIQUE',
+        'SQLITE_CONSTRAINT_PRIMARYKEY',
+        'SQLITE_CONSTRAINT_UNIQUE',
+      ]);
+    });
+
     it('generic errors from prepare() and exec()', () => {
       expect(expectSameAsNative((db) => db.prepare('SELEC 1'))).toMatchObject({ code: 'SQLITE_ERROR' });
       expect(expectSameAsNative((db) => db.prepare('SELECT * FROM missing'))).toMatchObject({ code: 'SQLITE_ERROR' });
@@ -170,6 +222,15 @@ describe('better-sqlite3 shim (sql.js)', () => {
       ['two named objects', 'SELECT @a AS a, @b AS b', [{ a: 1 }, { b: 2 }]],
       ['numbered parameters', 'SELECT ?2 AS a, ?1 AS b', [{ 1: 'one', 2: 'two' }]],
       ['numbered parameters given anonymously', 'SELECT ?2 AS a, ?1 AS b', [1, 2]],
+      ['other ArrayBufferViews bind as blobs', 'SELECT hex(?) AS a, hex(?) AS b, hex(?) AS c', [new Int16Array([1, 2]), new DataView(new ArrayBuffer(2)), new Uint8ClampedArray([3])]],
+      ['a subarray binds only its bytes', 'SELECT hex(?) AS a', [new Uint8Array([1, 2, 3, 4]).subarray(1, 3)]],
+      ['ArrayBuffer is rejected', 'SELECT ? AS a', [new ArrayBuffer(2)]],
+      ['bigint beyond int64 is rejected', 'SELECT ? AS a, ? AS b', [2n ** 63n, -(2n ** 63n) - 1n]],
+      ['class instance for named parameters', 'SELECT @a AS a', [new (class { a = 1 })()]],
+      ['function for named parameters', 'SELECT @a AS a', [() => 1]],
+      ['inherited keys are not named parameters', 'SELECT 1 AS a', [Object.create({ a: 1 })]],
+      ['unbindable value past the last parameter', 'SELECT 1 AS a', [true]],
+      ['unbindable array element past the last parameter', 'SELECT ? AS a', [[1, true]]],
     ];
     it.each(cases)('%s', (_label, sql, params) => {
       expectSameAsNative((db) => db.prepare(sql).get(...params));
@@ -215,6 +276,9 @@ describe('better-sqlite3 shim (sql.js)', () => {
         db.pragma('foreign_keys = ON', { simple: true }),
         db.pragma('journal_mode = WAL'),
         db.pragma('journal_mode', { simple: true }),
+        db.pragma('journal_mode = OFF'),
+        db.pragma("main.journal_mode = 'delete'", { simple: true }),
+        db.pragma('journal_mode = memory', { simple: true }),
         (db.pragma('table_info(p)') as unknown[]).length,
         db.pragma('user_version = 3', { simple: true }),
         db.pragma('user_version', { simple: true }),
@@ -307,6 +371,39 @@ describe('better-sqlite3 shim (sql.js)', () => {
           db.prepare('INSERT INTO rb VALUES (-1)').run();
         })()));
         res.push(db.inTransaction, db.prepare('SELECT count(*) AS n FROM rb').get());
+        return res;
+      });
+    });
+
+    it('run() reports a deferred constraint that fails at the implicit commit', () => {
+      expectSameAsNative((db) => {
+        db.exec('CREATE TABLE d (p_id INTEGER REFERENCES p(id) DEFERRABLE INITIALLY DEFERRED)');
+        const insert = db.prepare('INSERT INTO d VALUES (?) RETURNING p_id');
+        return [outcome(() => insert.run(99)), outcome(() => insert.run(1)), db.inTransaction, db.prepare('SELECT p_id FROM d').all()];
+      });
+    });
+
+    it('a transaction that leaves an iterator open fails like native (busy, still open)', () => {
+      expectSameAsNative((db) => {
+        let it: IterableIterator<unknown> | undefined;
+        const open = () => {
+          it = db.prepare('SELECT a FROM nr').iterate();
+          it.next();
+        };
+        const res: unknown[] = [outcome(() => db.transaction(open)()), db.inTransaction];
+        it!.return!();
+        db.exec('ROLLBACK');
+        res.push(
+          outcome(() =>
+            db.transaction(() => {
+              open();
+              throw new Error('fails');
+            })(),
+          ),
+          db.inTransaction,
+        );
+        it!.return!();
+        db.exec('ROLLBACK');
         return res;
       });
     });
@@ -408,6 +505,26 @@ describe('better-sqlite3 shim (sql.js)', () => {
         // Breaking out of a for-of releases the statement.
         for (const row of stmt.iterate()) if (row) break;
         return [seen, first, busy, stmt.all(), Object.prototype.toString.call(it), it.next()];
+      });
+    });
+
+    it('reading inTransaction mid-iteration changes nothing, including for writes with RETURNING', () => {
+      expectSameAsNative((db) => {
+        db.exec('CREATE TABLE w (a)');
+        const res: unknown[] = [];
+        const notStarted = db.prepare('SELECT a FROM w').iterate();
+        res.push(db.inTransaction);
+        notStarted.return!();
+        const write = db.prepare('INSERT INTO w VALUES (1), (2), (3) RETURNING a').iterate();
+        res.push(write.next().value, db.inTransaction, [...write], db.inTransaction);
+        db.exec('BEGIN');
+        const inTx = db.prepare('INSERT INTO w VALUES (4) RETURNING a').iterate();
+        res.push(inTx.next().value, db.inTransaction, [...inTx], db.inTransaction);
+        db.exec('COMMIT');
+        const read = db.prepare('SELECT a FROM w ORDER BY a').iterate();
+        res.push(read.next().value, db.inTransaction, [...read], db.inTransaction);
+        res.push(db.prepare('SELECT a FROM w ORDER BY a').all());
+        return res;
       });
     });
 

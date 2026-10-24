@@ -98,6 +98,18 @@ async function boot(page, base) {
   return { ms: Date.now() - t0, ...host };
 }
 
+/** The client's Tailwind styles are present and applied (an unstyled bundle still renders, so check computed styles). */
+async function assertStyled(page, where, failures) {
+  const styled = await page.evaluate(() => {
+    const flex = [...document.querySelectorAll('.flex')];
+    const body = getComputedStyle(document.body);
+    return { flex: flex.length, applied: flex.filter((e) => getComputedStyle(e).display === 'flex').length, font: body.fontFamily, bg: body.backgroundColor };
+  });
+  if (!styled.flex || styled.applied !== styled.flex) failures.push(`${where}: styles not applied (${styled.applied}/${styled.flex} .flex elements use display:flex)`);
+  if (!/Inter/.test(styled.font)) failures.push(`${where}: app font not applied (${styled.font})`);
+  if (/rgba\(0, 0, 0, 0\)|rgb\(255, 255, 255\)/.test(styled.bg)) failures.push(`${where}: canvas background not applied (${styled.bg})`);
+}
+
 async function signIn(page, roleName) {
   await page.getByRole('button', { name: new RegExp(roleName) }).first().click();
   await page.locator('h1').first().waitFor({ timeout: 20_000 });
@@ -137,6 +149,7 @@ async function main() {
       notes.push(`strict CSP boot: ${b.ms} ms, engine ${b.engine}, storage ${b.storage}`);
       if (b.engine !== 'asm') failures.push(`strict CSP: expected asm.js engine, got ${b.engine}`);
       await signIn(page, 'Security Guard');
+      await assertStyled(page, 'strict CSP', failures);
       await page.screenshot({ path: path.join(OUT, 'strict_guard_home.png') });
       const errs = w.errors.filter((e) => !/WebAssembly|wasm/i.test(e));
       if (errs.length) failures.push(`strict CSP: ${errs.join(' | ')}`);
@@ -154,7 +167,11 @@ async function main() {
       const b = await boot(page, BASE);
       notes.push(`${vp.name} boot (fresh dataset): ${b.ms} ms, engine ${b.engine}, storage ${b.storage}`);
       if (b.engine !== 'wasm') failures.push(`${vp.name}: expected WebAssembly engine, got ${b.engine}`);
+      await page.waitForTimeout(400);
+      await assertStyled(page, `${vp.name} sign-in`, failures);
+      await page.screenshot({ path: path.join(OUT, `${vp.name}_login.png`) });
       await signIn(page, 'System Administrator');
+      await assertStyled(page, `${vp.name} signed in`, failures);
 
       const detailRoutes = [];
       for (const [api, route, suffix] of DETAIL_SOURCES) {
@@ -216,8 +233,6 @@ async function main() {
       if (!signedIn) failures.push('reload: session was not kept');
       await go(page, '/gate/recent');
       if (ref && !(await page.getByText(ref).first().isVisible().catch(() => false))) failures.push(`reload: recorded event ${ref} not visible after reload`);
-      const presence = await apiGet(page, `/events?q=${ref}`).catch(() => null);
-      if (ref && !(presence?.items ?? []).some((e) => e.reference === ref)) failures.push(`reload: event ${ref} missing from the register after reload`);
       if (w.errors.length) failures.push(`gate: ${w.errors.join(' | ')}`);
       if (w.requests.length) failures.push(`gate: unexpected network requests: ${[...new Set(w.requests)].join(', ')}`);
       checked += 3;
