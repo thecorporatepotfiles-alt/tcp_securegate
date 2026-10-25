@@ -11,8 +11,38 @@ export const BROWSER_EDITION = import.meta.env.VITE_SG_EDITION === 'browser';
 /** Bridge exposed by the in-page server once it has started (browser edition only). */
 export interface BrowserHostBridge {
   engine: 'wasm' | 'asm';
-  storage: 'indexeddb' | 'memory';
+  /** Live: becomes 'memory' when saving on this device fails. */
+  readonly storage: 'indexeddb' | 'memory';
+  /** Why the latest save failed, or null while saves succeed. */
+  readonly saveError: string | null;
+  /** Set when saved data could not be restored and a fresh dataset was generated instead. */
+  restoreNotice: string | null;
+  /** When the synthetic dataset now in use was generated (ISO time). */
+  dataCreatedAt: string;
   resetLocalData(): Promise<void>;
+}
+
+/** Fired on window by the in-page server whenever `storage` or `saveError` changes. */
+export const BROWSER_STORAGE_EVENT = 'sg:storage';
+
+/** The bridge, re-rendering the caller when its storage state changes. */
+export function useBrowserHost(): BrowserHostBridge | undefined {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!BROWSER_EDITION) return;
+    const bump = () => setTick((t) => t + 1);
+    window.addEventListener(BROWSER_STORAGE_EVENT, bump);
+    return () => window.removeEventListener(BROWSER_STORAGE_EVENT, bump);
+  }, []);
+  return browserHost();
+}
+
+/**
+ * Copy that names where checks run: "the server" in the standard edition, the
+ * same rules running inside this page in the browser edition.
+ */
+export function serverCopy(server: string, browser: string): string {
+  return BROWSER_EDITION ? browser : server;
 }
 
 /** The in-page server bridge, or undefined in the standard edition / before it has started. */
