@@ -252,7 +252,7 @@ export default function ContractorsPage() {
                           <Avatar name={r.fullName} size={34} />
                           <div className="min-w-0">
                             <div className="font-medium">{r.fullName}</div>
-                            <div className="font-mono text-xs text-ink-3">{r.reference}</div>
+                            <div className="font-mono text-xs whitespace-nowrap text-ink-3">{r.reference}</div>
                           </div>
                         </div>
                       ),

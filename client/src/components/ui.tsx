@@ -1,14 +1,20 @@
 import {
   forwardRef,
+  useCallback,
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
+  useState,
   type ButtonHTMLAttributes,
+  type CSSProperties,
   type InputHTMLAttributes,
+  type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
   type SelectHTMLAttributes,
   type TextareaHTMLAttributes,
 } from 'react';
+import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Circle, Info, Loader2, Search, X, XCircle } from 'lucide-react';
 import type { Tone } from '../../../shared/constants';
@@ -30,7 +36,8 @@ const BTN_VARIANT: Record<ButtonVariant, string> = {
   secondary: 'bg-white text-ink border border-line-strong hover:bg-canvas active:bg-line',
   ghost: 'text-ink-2 hover:bg-forest-50 hover:text-ink',
   danger: 'bg-bad text-white hover:bg-[#962222] active:bg-[#7f1d1d]',
-  gold: 'bg-gold-500 text-forest-950 hover:bg-gold-400 active:bg-gold-600',
+  // Pressed shade sits between gold-500 and gold-600: the darkened gold-600 text token would drop the label to 3.1:1.
+  gold: 'bg-gold-500 text-forest-950 hover:bg-gold-400 active:bg-[#a5823a]',
 };
 const BTN_SIZE: Record<ButtonSize, string> = {
   sm: 'h-8 px-3 text-[13px] gap-1.5 rounded-md',
@@ -496,38 +503,140 @@ export function Pagination({ page, pageSize, total, onPage }: { page: number; pa
 }
 
 // ---------------------------------------------------------------------------
+// Focus management (dialogs, drawers)
+// ---------------------------------------------------------------------------
+
+const FOCUSABLE =
+  'a[href], area[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"]), [contenteditable="true"]';
+
+/** Elements inside `root` that Tab can reach, in document order (hidden ones skipped). */
+export function focusableIn(root: HTMLElement): HTMLElement[] {
+  return [...root.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((el) => el.tabIndex >= 0 && el.getClientRects().length > 0);
+}
+
+/** Keeps Tab and Shift+Tab cycling inside `root`. Call it from a keydown handler. */
+export function trapTabKey(e: KeyboardEvent | ReactKeyboardEvent, root: HTMLElement) {
+  if (e.key !== 'Tab') return;
+  const items = focusableIn(root);
+  const active = document.activeElement;
+  const inside = !!active && root.contains(active);
+  if (items.length === 0) {
+    e.preventDefault();
+    root.focus();
+    return;
+  }
+  const first = items[0];
+  const last = items[items.length - 1];
+  if (e.shiftKey ? !inside || active === first || active === root : !inside || active === last) {
+    e.preventDefault();
+    (e.shiftKey ? last : first).focus();
+  }
+}
+
+/** Open dialogs, topmost last: only the topmost one answers Escape and Tab. */
+const openDialogs: HTMLElement[] = [];
+
+/**
+ * Makes everything on the page outside `keep` inert (unreachable by Tab, hidden from
+ * assistive technology) and returns the undo. Live regions such as the toast stack
+ * stay reachable so errors raised while a dialog is open are still announced.
+ */
+function inertOutside(keep: HTMLElement): () => void {
+  const kept = [keep, ...document.querySelectorAll<HTMLElement>('[aria-live]')];
+  const changed: HTMLElement[] = [];
+  const walk = (parent: Element) => {
+    for (const child of parent.children) {
+      if (!(child instanceof HTMLElement) || child.inert || kept.includes(child) || /^(SCRIPT|STYLE|TEMPLATE)$/.test(child.tagName)) continue;
+      if (kept.some((k) => child.contains(k))) walk(child);
+      else {
+        child.inert = true;
+        changed.push(child);
+      }
+    }
+  };
+  walk(document.body);
+  return () => changed.forEach((el) => (el.inert = false));
+}
+
+// ---------------------------------------------------------------------------
 // Modal
 // ---------------------------------------------------------------------------
 
+/**
+ * Accessible modal dialog: rendered at the end of <body>, the rest of the page is inert
+ * while it is open, focus moves in (a [data-autofocus] control, else the first field,
+ * else the dialog itself), Tab cycles inside, Escape closes, and focus returns to the
+ * opener on close.
+ */
 export function Modal({ open, onClose, title, description, children, footer, size = 'md' }: { open: boolean; onClose: () => void; title: ReactNode; description?: ReactNode; children?: ReactNode; footer?: ReactNode; size?: 'sm' | 'md' | 'lg' }) {
-  const ref = useRef<HTMLDivElement>(null);
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+  const descriptionId = useId();
+  // Callers usually pass an inline onClose. Reading it through a ref keeps the effect below
+  // from re-running on every parent render, which used to bounce focus out on each keystroke.
+  const onCloseRef = useRef(onClose);
+  useLayoutEffect(() => {
+    onCloseRef.current = onClose;
+  });
+
   useEffect(() => {
-    if (!open) return;
-    const prev = document.activeElement as HTMLElement | null;
+    const overlay = overlayRef.current;
+    const dialog = dialogRef.current;
+    if (!open || !overlay || !dialog) return;
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    openDialogs.push(dialog);
+    const restoreOutside = inertOutside(overlay);
+    const preferred =
+      dialog.querySelector<HTMLElement>('[data-autofocus]:not([disabled])') ?? focusableIn(dialog).find((el) => el.matches('input, select, textarea'));
+    (preferred ?? dialog).focus();
+    if (!dialog.contains(document.activeElement)) dialog.focus();
+
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (openDialogs[openDialogs.length - 1] !== dialog || e.isComposing) return;
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        onCloseRef.current();
+        return;
+      }
+      // Focus in something added on top later (e.g. the browser edition's "open in another tab" notice) is left alone.
+      const active = document.activeElement;
+      if (active && active !== document.body && !dialog.contains(active) && !active.closest('[inert]')) return;
+      trapTabKey(e, dialog);
     };
-    document.addEventListener('keydown', onKey);
-    setTimeout(() => ref.current?.querySelector<HTMLElement>('input, select, textarea, button[data-autofocus]')?.focus(), 30);
+    // Capture phase on document: works even when focus has fallen back to <body>.
+    document.addEventListener('keydown', onKey, true);
     return () => {
-      document.removeEventListener('keydown', onKey);
-      prev?.focus?.();
+      document.removeEventListener('keydown', onKey, true);
+      const at = openDialogs.indexOf(dialog);
+      if (at >= 0) openDialogs.splice(at, 1);
+      restoreOutside();
+      if (opener?.isConnected) opener.focus();
     };
-  }, [open, onClose]);
+  }, [open]);
+
   if (!open) return null;
-  return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-forest-950/50 p-0 sm:items-center sm:p-4" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+  return createPortal(
+    <div ref={overlayRef} className="fixed inset-0 z-50 flex items-end justify-center bg-forest-950/50 p-0 sm:items-center sm:p-4" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div
-        ref={ref}
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
-        aria-label={typeof title === 'string' ? title : undefined}
-        className={cx('max-h-[92vh] w-full overflow-y-auto rounded-t-2xl bg-white shadow-[var(--shadow-pop)] sm:rounded-2xl', size === 'sm' ? 'sm:max-w-md' : size === 'md' ? 'sm:max-w-lg' : 'sm:max-w-2xl')}
+        aria-labelledby={titleId}
+        aria-describedby={description ? descriptionId : undefined}
+        tabIndex={-1}
+        className={cx('max-h-[92vh] w-full overflow-y-auto rounded-t-2xl bg-white shadow-[var(--shadow-pop)] outline-none sm:rounded-2xl', size === 'sm' ? 'sm:max-w-md' : size === 'md' ? 'sm:max-w-lg' : 'sm:max-w-2xl')}
       >
         <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4">
           <div>
-            <h2 className="text-base font-semibold text-ink">{title}</h2>
-            {description && <p className="mt-0.5 text-[13px] text-ink-3">{description}</p>}
+            <h2 id={titleId} className="text-base font-semibold text-ink">
+              {title}
+            </h2>
+            {description && (
+              <p id={descriptionId} className="mt-0.5 text-[13px] text-ink-3">
+                {description}
+              </p>
+            )}
           </div>
           <button type="button" onClick={onClose} className="rounded-md p-1 text-ink-3 hover:bg-canvas hover:text-ink" aria-label="Close">
             <X className="size-5" />
@@ -536,13 +645,62 @@ export function Modal({ open, onClose, title, description, children, footer, siz
         <div className="px-5 py-4">{children}</div>
         {footer && <div className="flex flex-wrap justify-end gap-2 border-t border-line bg-canvas/60 px-5 py-3">{footer}</div>}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
+const EDGE_FADE = '2rem';
+
+/** Fades the edges where more tabs are scrolled out of view, leaving a classic scrollbar (if any) unfaded. */
+function edgeFadeStyle(left: boolean, right: boolean, scrollbar: number): CSSProperties | undefined {
+  if (!left && !right) return undefined;
+  const fade = `linear-gradient(to right, ${left ? `transparent, #000 ${EDGE_FADE}` : '#000, #000'}, ${right ? `#000 calc(100% - ${EDGE_FADE}), transparent` : '#000'})`;
+  const image = `${fade}, linear-gradient(#000, #000)`;
+  const size = `100% 100%, 100% ${scrollbar}px`;
+  const position = '0 0, 0 100%';
+  return { maskImage: image, WebkitMaskImage: image, maskSize: size, WebkitMaskSize: size, maskPosition: position, WebkitMaskPosition: position, maskRepeat: 'no-repeat', WebkitMaskRepeat: 'no-repeat' };
+}
+
 export function Tabs<T extends string>({ tabs, value, onChange }: { tabs: { value: T; label: ReactNode; count?: number }[]; value: T; onChange: (v: T) => void }) {
+  const listRef = useRef<HTMLDivElement>(null);
+  const [edges, setEdges] = useState({ left: false, right: false, scrollbar: 0 });
+  const measure = useCallback(() => {
+    const el = listRef.current;
+    if (!el) return;
+    const next = { left: el.scrollLeft > 1, right: el.scrollLeft + el.clientWidth < el.scrollWidth - 1, scrollbar: el.offsetHeight - el.clientHeight };
+    setEdges((e) => (e.left === next.left && e.right === next.right && e.scrollbar === next.scrollbar ? e : next));
+  }, []);
+  // Labels and counts change the row's width without resizing it, so re-measure after every render too.
+  useLayoutEffect(measure);
+  useEffect(() => {
+    const el = listRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [measure]);
+  // On narrow screens keep the selected tab in view, scrolling only the row (never the page).
+  useEffect(() => {
+    const el = listRef.current;
+    const tab = el?.querySelector<HTMLElement>('[aria-selected="true"]');
+    if (!el || !tab) return;
+    const margin = 32;
+    if (tab.offsetLeft < el.scrollLeft) el.scrollLeft = Math.max(0, tab.offsetLeft - margin);
+    else if (tab.offsetLeft + tab.offsetWidth > el.scrollLeft + el.clientWidth) el.scrollLeft = tab.offsetLeft + tab.offsetWidth - el.clientWidth + margin;
+  }, [value]);
+
   return (
-    <div className="no-print mb-4 flex gap-1 overflow-x-auto border-b border-line" role="tablist">
+    // The baseline is an inset shadow, not a border the tabs overlap with a negative margin: that 1px
+    // overlap turned every row into a vertical scroll area (a stray scrollbar and a wheel trap). From lg
+    // up the row wraps so every tab stays visible; below that it scrolls sideways with faded edges.
+    <div
+      ref={listRef}
+      role="tablist"
+      onScroll={measure}
+      style={edgeFadeStyle(edges.left, edges.right, edges.scrollbar)}
+      className="no-print relative mb-4 flex gap-1 overflow-x-auto overflow-y-hidden shadow-[inset_0_-1px_0_var(--color-line)] [scrollbar-width:thin] lg:flex-wrap"
+    >
       {tabs.map((t) => (
         <button
           key={t.value}
@@ -551,7 +709,7 @@ export function Tabs<T extends string>({ tabs, value, onChange }: { tabs: { valu
           aria-selected={value === t.value}
           onClick={() => onChange(t.value)}
           className={cx(
-            '-mb-px flex items-center gap-2 border-b-2 px-3 py-2.5 text-sm font-medium whitespace-nowrap transition-colors',
+            'flex shrink-0 items-center gap-2 border-b-2 px-3 py-2.5 text-sm font-medium whitespace-nowrap transition-colors',
             value === t.value ? 'border-gold-500 text-ink' : 'border-transparent text-ink-3 hover:text-ink',
           )}
         >

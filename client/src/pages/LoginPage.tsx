@@ -4,12 +4,28 @@ import { ArrowRight, Lock, ShieldCheck } from 'lucide-react';
 import { api, errorMessage } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { clearLastPath } from '../lib/browserRouting';
-import { BROWSER_EDITION, browserHost } from '../lib/edition';
+import { BROWSER_EDITION, serverCopy, useBrowserHost } from '../lib/edition';
 import { Wordmark, LogoMark } from '../components/Logo';
 import { DemoBanner } from '../components/layout/AppShell';
 import { Avatar, Button, Input, Modal, Notice, cx } from '../components/ui';
 import { homeFor } from '../App';
 import type { RoleCode } from '../../../shared/constants';
+
+const HIGHLIGHTS = [
+  serverCopy('Role- and location-based access, enforced on the server', "Role- and location-based access rules, applied by SecureGate's server code running in this page"),
+  serverCopy('Signed QR visitor passes with server-side verification', 'Signed QR visitor passes, verified by the same rules'),
+  serverCopy('Append-only movement records and audit trail', 'Append-only movement records and audit trail (a demonstration: data in this browser is not protected)'),
+];
+
+/** Browser edition: the restore notice belongs to one dataset, so a dismissal is remembered per dataset for this tab. */
+const RESTORE_DISMISSED_KEY = 'sg-restore-notice-dismissed';
+function readRestoreDismissed(): string | null {
+  try {
+    return sessionStorage.getItem(RESTORE_DISMISSED_KEY);
+  } catch {
+    return null;
+  }
+}
 
 const ROLE_BLURB: Record<RoleCode, string> = {
   SYSTEM_ADMIN: 'Configure locations, gates, users, roles and workflow rules',
@@ -31,9 +47,24 @@ export default function LoginPage() {
   const [startOverOpen, setStartOverOpen] = useState(false);
   const [startingOver, setStartingOver] = useState(false);
   const [startOverError, setStartOverError] = useState<string | null>(null);
-  const host = browserHost();
+  // Live: re-renders when the in-page server's storage state changes.
+  const host = useBrowserHost();
+  const [restoreDismissed, setRestoreDismissed] = useState(readRestoreDismissed);
+  const restoreNotice = BROWSER_EDITION && host?.restoreNotice && restoreDismissed !== host.dataCreatedAt ? host.restoreNotice : null;
+  const dismissRestoreNotice = () => {
+    if (!host) return;
+    setRestoreDismissed(host.dataCreatedAt);
+    try {
+      sessionStorage.setItem(RESTORE_DISMISSED_KEY, host.dataCreatedAt);
+    } catch {
+      /* storage blocked: the notice stays dismissed until this screen is left */
+    }
+  };
 
-  if (me) return <Navigate to={sp.get('next') ?? homeFor((p) => can(p))} replace />;
+  // Browser edition: after a failed restore, ?next is the page of a session in the discarded data and may
+  // belong to another role, so whoever signs in starts at their own home page.
+  const next = BROWSER_EDITION && host?.restoreNotice ? null : sp.get('next');
+  if (me) return <Navigate to={next ?? homeFor((p) => can(p))} replace />;
 
   // Once the session loads, the redirect above takes over. A second navigate() here raced with it and
   // could leave the app on '/' with the home redirect already spent (always so with the in-memory router).
@@ -92,7 +123,7 @@ export default function LoginPage() {
   return (
     <div className="flex min-h-screen flex-col bg-canvas">
       <DemoBanner />
-      <div className="grid flex-1 lg:grid-cols-[minmax(380px,0.9fr)_1.1fr]">
+      <main className="grid flex-1 lg:grid-cols-[minmax(380px,0.9fr)_1.1fr]">
         <section className="relative hidden overflow-hidden bg-forest-900 p-12 text-white lg:flex lg:flex-col">
           <div className="pointer-events-none absolute -right-40 -bottom-40 opacity-[0.07]">
             <LogoMark size={620} />
@@ -100,12 +131,13 @@ export default function LoginPage() {
           <Wordmark />
           <div className="mt-auto max-w-md">
             <div className="mb-4 h-px w-16 bg-gold-400" />
-            <h1 className="text-[34px] leading-tight font-semibold tracking-tight">Secure gate, visitor and entry–exit management.</h1>
+            {/* Not the page heading: this panel is hidden below lg, and the h1 must be there at every width. */}
+            <p className="text-[34px] leading-tight font-semibold tracking-tight">Secure gate, visitor and entry–exit management.</p>
             <p className="mt-4 text-[15px] leading-relaxed text-forest-200/80">
               One accountable record of who is inside — personnel, visitors, contractors, vehicles and deliveries — across headquarters and every location.
             </p>
             <ul className="mt-8 space-y-3 text-sm text-forest-200/90">
-              {['Role- and location-based access, enforced on the server', 'Signed QR visitor passes with server-side verification', 'Append-only movement records and audit trail'].map((t) => (
+              {HIGHLIGHTS.map((t) => (
                 <li key={t} className="flex items-start gap-2.5">
                   <ShieldCheck className="mt-0.5 size-4 shrink-0 text-gold-400" aria-hidden />
                   {t}
@@ -113,14 +145,25 @@ export default function LoginPage() {
               ))}
             </ul>
           </div>
-          <p className="mt-10 text-xs text-forest-200/50">Prototype for client demonstration. Not approved for operational use.</p>
+          <p className="mt-10 text-xs text-forest-200/70">Prototype for client demonstration. Not approved for operational use.</p>
         </section>
 
         <section className="flex flex-col items-center justify-center px-4 py-10 sm:px-8">
+          <h1 className="sr-only">Sign in to TCP SecureGate</h1>
           <div className="mb-8 lg:hidden">
             <Wordmark light={false} />
           </div>
           <div className="w-full max-w-[560px]">
+            {restoreNotice && (
+              <Notice tone="warning" className="mb-5" title="Saved demo data was not restored">
+                {restoreNotice}
+                <div className="mt-2">
+                  <Button size="sm" onClick={dismissRestoreNotice}>
+                    Dismiss
+                  </Button>
+                </div>
+              </Notice>
+            )}
             {expiredReason && (
               <Notice tone="warning" className="mb-5" title="Signed out">
                 {expiredReason}
@@ -145,10 +188,9 @@ export default function LoginPage() {
                       <Avatar name={a.displayName} size={38} tone={a.role === 'GUARD' ? 'gold' : 'forest'} />
                       <span className="min-w-0 flex-1">
                         <span className="block text-[13.5px] font-semibold text-ink">{a.roleName}</span>
-                        <span className="block truncate text-xs text-ink-2">
-                          {a.displayName}
-                          {a.locationName ? ` · ${a.locationName}` : ''}
-                        </span>
+                        <span className="block text-xs text-ink-2">{a.displayName}</span>
+                        {/* Own line, never truncated: the location is what tells same-role demo accounts apart. */}
+                        {a.locationName && <span className="block text-xs font-medium text-forest-700">{a.locationName}</span>}
                         <span className="mt-1 block text-[11.5px] leading-snug text-ink-3">{ROLE_BLURB[a.role]}</span>
                       </span>
                       <ArrowRight className="mt-1 size-4 shrink-0 text-ink-3 transition-transform group-hover:translate-x-0.5 group-hover:text-forest-700" aria-hidden />
@@ -156,7 +198,7 @@ export default function LoginPage() {
                   ))}
                 </div>
                 {accounts.length > visible.length || showAll ? (
-                  <button type="button" className="mt-3 text-[13px] font-medium text-forest-700 hover:text-forest-900" onClick={() => setShowAll((v) => !v)}>
+                  <button type="button" className="-mx-3 mt-1 inline-flex min-h-11 items-center rounded-lg px-3 text-[13px] font-medium text-forest-700 hover:text-forest-900" onClick={() => setShowAll((v) => !v)}>
                     {showAll ? 'Show fewer demo accounts' : `Show all ${accounts.length} demo accounts (other locations)`}
                   </button>
                 ) : null}
@@ -186,7 +228,7 @@ export default function LoginPage() {
               <div className="mt-4 text-center">
                 <button
                   type="button"
-                  className="text-[13px] font-medium text-forest-700 underline-offset-2 hover:text-forest-900 hover:underline"
+                  className="inline-flex min-h-11 items-center rounded-lg px-3 text-[13px] font-medium text-forest-700 underline-offset-2 hover:text-forest-900 hover:underline"
                   onClick={() => {
                     setStartOverError(null);
                     setStartOverOpen(true);
@@ -198,7 +240,7 @@ export default function LoginPage() {
             )}
           </div>
         </section>
-      </div>
+      </main>
       <Modal
         open={startOverOpen}
         onClose={() => !startingOver && setStartOverOpen(false)}

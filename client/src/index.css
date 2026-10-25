@@ -16,7 +16,8 @@
   --color-forest-100: #e4efe8;
   --color-forest-50: #f1f7f3;
 
-  --color-gold-600: #9c7a33;
+  /* Small eyebrow and badge text: 6.0:1 on white, 5.4:1 on canvas, 5.3:1 on gold-100. */
+  --color-gold-600: #7a5f26;
   --color-gold-500: #b8913f;
   --color-gold-400: #cba35a;
   --color-gold-300: #ddc18c;
@@ -29,7 +30,8 @@
   --color-line-strong: #d3d0c4;
   --color-ink: #16201b;
   --color-ink-2: #4a544e;
-  --color-ink-3: #78807b;
+  /* Secondary text (hints, table headers, timestamps): 5.8:1 on white, 5.3:1 on canvas, 5.0:1 on mute-bg. */
+  --color-ink-3: #5f6762;
 
   --color-ok: #1b7a4b;
   --color-ok-bg: #e5f3eb;
@@ -72,6 +74,22 @@
   }
   table {
     font-variant-numeric: tabular-nums;
+  }
+}
+
+/*
+ * Reduced motion: spinners stop (loading is still shown by disabled buttons and "Loading…" labels) and
+ * movement transitions are dropped. Unlayered, so it overrides Tailwind's utilities layer without !important.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .animate-spin,
+  .animate-ping,
+  .animate-pulse,
+  .animate-bounce {
+    animation: none;
+  }
+  .transition-transform {
+    transition: none;
   }
 }
 

@@ -80,7 +80,8 @@ export default function ManualReviewsPage() {
             const link = subjectLink(r.subjectType, r.subjectId);
             return (
               <Card key={r.id}>
-                <div className="flex flex-wrap items-start justify-between gap-4">
+                {/* Phones: the decision column moves below the case instead of squeezing it into a narrow strip. */}
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <ReviewStatusBadge status={r.status as ManualReviewStatus} />
@@ -125,15 +126,17 @@ export default function ManualReviewsPage() {
                     )}
                   </div>
                   {r.status === 'PENDING' && (
-                    <div className="flex shrink-0 flex-col items-stretch gap-2 sm:w-44">
+                    <div className="flex flex-wrap gap-2 sm:w-44 sm:shrink-0 sm:flex-col sm:items-stretch">
                       {own ? (
-                        <Notice tone="neutral">You requested this review; another authorized user must decide it.</Notice>
+                        <Notice tone="neutral" className="w-full">
+                          You requested this review; another authorized user must decide it.
+                        </Notice>
                       ) : (
                         <>
-                          <Button variant="primary" icon={<CheckCircle2 className="size-4" />} onClick={() => setDecision({ review: r, decision: 'APPROVED' })}>
+                          <Button variant="primary" className="flex-1 sm:flex-none" icon={<CheckCircle2 className="size-4" />} onClick={() => setDecision({ review: r, decision: 'APPROVED' })}>
                             Approve
                           </Button>
-                          <Button variant="danger" icon={<XCircle className="size-4" />} onClick={() => setDecision({ review: r, decision: 'DECLINED' })}>
+                          <Button variant="danger" className="flex-1 sm:flex-none" icon={<XCircle className="size-4" />} onClick={() => setDecision({ review: r, decision: 'DECLINED' })}>
                             Decline
                           </Button>
                         </>

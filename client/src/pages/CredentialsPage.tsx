@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { CreditCard } from 'lucide-react';
 import { api, type Page } from '../lib/api';
+import { serverCopy } from '../lib/edition';
 import { useLocationScope } from '../lib/location';
 import { useListParams } from '../lib/useListParams';
 import { fmtDateTime } from '../lib/format';
@@ -29,7 +30,7 @@ export default function CredentialsPage() {
         actions={<SimulatedTag>Mock reader — no hardware</SimulatedTag>}
       />
       <Notice tone="info" className="mb-4" title="Integration boundary">
-        A credential carries only an opaque card/tag number. Personal details stay in the protected database. Compatible, separately approved readers can later submit the
+        A credential carries only an opaque card/tag number. {serverCopy('Personal details stay in the protected database.', 'Personal details stay in the SecureGate database, not on the credential.')} Compatible, separately approved readers can later submit the
         same number to the existing verification service; hardware compatibility is not claimed until tested.
       </Notice>
       <FilterBar>
@@ -73,7 +74,7 @@ export default function CredentialsPage() {
               onSort={(sort, dir) => set({ sort, dir })}
               empty={<EmptyState icon={<CreditCard className="size-5" />} title="No credentials match" description="Clear the filters, or assign a credential from a personnel or contractor record." />}
               columns={[
-                { key: 'number', header: 'Credential', sortKey: 'number', render: (r) => <span className="font-mono text-[13px] font-semibold">{r.credentialNumber}</span> },
+                { key: 'number', header: 'Credential', sortKey: 'number', render: (r) => <span className="font-mono text-[13px] font-semibold whitespace-nowrap">{r.credentialNumber}</span> },
                 {
                   key: 'holder',
                   header: 'Holder',
@@ -83,7 +84,7 @@ export default function CredentialsPage() {
                     return (
                       <div className="min-w-0">
                         {to ? <InlineLink to={to}>{r.holderName ?? '—'}</InlineLink> : (r.holderName ?? '—')}
-                        <div className="font-mono text-xs text-ink-3">{r.holderReference}</div>
+                        <div className="font-mono text-xs whitespace-nowrap text-ink-3">{r.holderReference}</div>
                       </div>
                     );
                   },

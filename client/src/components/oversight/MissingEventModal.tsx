@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api, type Page } from '../../lib/api';
+import { serverCopy } from '../../lib/edition';
 import { useLocationScope } from '../../lib/location';
 import { fmtDateTime, nowLocalTime, todayLocal, zonedIso, timezone } from '../../lib/format';
 import type { Row } from '../../lib/types';
@@ -180,7 +181,7 @@ export function MissingEventModal({
             value={when}
             onChange={(e) => setWhen(e.target.value)}
             error={future ? 'Cannot be in the future' : null}
-            hint="Stored as the reported time; the record time is set by the server."
+            hint={serverCopy('Stored as the reported time; the record time is set by the server.', 'Stored as the reported time; the record time is set when the correction is saved.')}
           />
         </div>
         <Textarea label="Reason for correction" required rows={3} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Exit not recorded during register changeover; confirmed with duty NCO" />

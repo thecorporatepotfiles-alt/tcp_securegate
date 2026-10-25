@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { Route, Routes } from 'react-router-dom';
 import { DemoBanner } from '../components/layout/AppShell';
 import { GateProvider, useGate } from './GateContext';
@@ -42,8 +43,28 @@ function GateRoutes() {
   );
 }
 
+/**
+ * The page scrollbar and any canvas outside the wrapper (overscroll) follow the root element, not
+ * the wrapper: make the root dark while the gate is shown and restore it for the management UI.
+ */
+function useDarkRoot() {
+  useEffect(() => {
+    const root = document.documentElement;
+    const prev = { scheme: root.style.colorScheme, bg: root.style.backgroundColor, bodyBg: document.body.style.backgroundColor };
+    root.style.colorScheme = 'dark';
+    root.style.backgroundColor = 'var(--color-forest-950)';
+    document.body.style.backgroundColor = 'var(--color-forest-950)';
+    return () => {
+      root.style.colorScheme = prev.scheme;
+      root.style.backgroundColor = prev.bg;
+      document.body.style.backgroundColor = prev.bodyBg;
+    };
+  }, []);
+}
+
 /** Full-screen, touch-first gate interface for security operators. */
 export default function GateApp() {
+  useDarkRoot();
   return (
     <GateProvider>
       <div className="min-h-screen bg-forest-950 text-white [color-scheme:dark]">

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useRef, type ReactNode } from 'react';
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { ShieldOff } from 'lucide-react';
 import { useAuth } from './lib/auth';
@@ -55,12 +55,15 @@ const GateApp = lazy(() => import('./gate/GateApp'));
 
 function NotAuthorized() {
   return (
-    <EmptyState
-      icon={<ShieldOff className="size-6" />}
-      title="You are not authorized to view this page"
-      description="Your role does not include access to this area. Contact your administrator if you believe this is wrong."
-      action={<ButtonLink to="/">Go to your home page</ButtonLink>}
-    />
+    <>
+      <h1 className="sr-only">Not authorized</h1>
+      <EmptyState
+        icon={<ShieldOff className="size-6" />}
+        title="You are not authorized to view this page"
+        description="Your role does not include access to this area. Contact your administrator if you believe this is wrong."
+        action={<ButtonLink to="/">Go to your home page</ButtonLink>}
+      />
+    </>
   );
 }
 
@@ -91,6 +94,25 @@ function RequireSession({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
+/**
+ * Signs out on arrival. The user menu signs out by navigating here, so a page with unsaved changes can
+ * hold the navigation and ask first. It needs in-app navigation state, so a plain link cannot sign anyone out.
+ */
+function SignOut() {
+  const { logout } = useAuth();
+  const navigate = useNavigate();
+  const intended = (useLocation().state as { signOut?: unknown } | null)?.signOut === true;
+  const started = useRef(false);
+  useEffect(() => {
+    if (!intended || started.current) return;
+    started.current = true;
+    logout()
+      .catch(() => undefined)
+      .finally(() => navigate('/login', { replace: true }));
+  }, [intended, logout, navigate]);
+  return intended ? <Spinner label="Signing out…" /> : <Navigate to="/" replace />;
+}
+
 const page = (perms: Permission[], el: ReactNode) => <Guard perms={perms}>{el}</Guard>;
 
 export default function App() {
@@ -103,6 +125,7 @@ export default function App() {
     <Suspense fallback={<Spinner />}>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/sign-out" element={<SignOut />} />
         <Route
           path="/gate/*"
           element={
@@ -167,7 +190,15 @@ export default function App() {
           <Route path="admin/locations" element={page(['locations.manage'], <LocationsPage />)} />
           <Route path="admin/settings" element={page(['settings.manage'], <SettingsPage />)} />
           <Route path="admin/system" element={page(['settings.manage', 'demo.reset'], <SystemPage />)} />
-          <Route path="*" element={<EmptyState title="Page not found" description="The page you requested does not exist." action={<ButtonLink to="/">Go home</ButtonLink>} />} />
+          <Route
+            path="*"
+            element={
+              <>
+                <h1 className="sr-only">Page not found</h1>
+                <EmptyState title="Page not found" description="The page you requested does not exist." action={<ButtonLink to="/">Go home</ButtonLink>} />
+              </>
+            }
+          />
         </Route>
       </Routes>
     </Suspense>

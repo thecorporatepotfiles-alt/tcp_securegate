@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Ban, FilePlus2, ShieldCheck } from 'lucide-react';
 import { api } from '../lib/api';
+import { serverCopy } from '../lib/edition';
 import { fmtDateTime, titleCase } from '../lib/format';
 import type { Row } from '../lib/types';
 import { REGISTER_CATEGORY_LABEL, VERIFICATION_METHOD_LABEL, type RegisterCategory, type ResultCode, type VerificationMethod } from '../../../shared/constants';
@@ -68,12 +69,13 @@ export default function EventDetailPage() {
       ) : null}
       {e.outcome === 'CORRECTION_ENTRY' && (
         <Notice tone="info" className="mb-5" title="Administrative correction entry">
-          Added after the fact by an authorized user. Reported to have occurred at {fmtDateTime(e.reportedOccurredAt)}; recorded by the server at {fmtDateTime(e.recordedAt)}.
+          Added after the fact by an authorized user. Reported to have occurred at {fmtDateTime(e.reportedOccurredAt)}; {serverCopy('recorded by the server', 'saved')} at {fmtDateTime(e.recordedAt)}.
         </Notice>
       )}
       <div className="grid gap-5 lg:grid-cols-3">
         <Card className="lg:col-span-2">
-          <CardHeader title="Event details" subtitle="Timestamps are server-generated and authoritative." />
+          {/* Browser edition: the in-page server's clock is this device's clock, so it is not authoritative. */}
+          <CardHeader title="Event details" subtitle={serverCopy('Timestamps are server-generated and authoritative.', "Timestamps are set when a record is saved, from this device's clock.")} />
           <KeyValue
             items={[
               { label: 'Event', value: <EventTypeBadge type={e.eventType} voided={e.voided} /> },
@@ -91,7 +93,7 @@ export default function EventDetailPage() {
               { label: 'Record type', value: REGISTER_CATEGORY_LABEL[category] ?? titleCase(e.subjectType) },
               { label: 'Location', value: e.locationName },
               { label: 'Gate', value: e.gateName },
-              { label: 'Recorded at (server)', value: fmtDateTime(e.recordedAt) },
+              { label: serverCopy('Recorded at (server)', 'Recorded at (device time)'), value: fmtDateTime(e.recordedAt) },
               { label: 'Reported occurrence time', value: fmtDateTime(e.reportedOccurredAt), hidden: !e.reportedOccurredAt },
               { label: 'Verification method', value: VERIFICATION_METHOD_LABEL[e.verificationMethod as VerificationMethod] ?? e.verificationMethod },
               { label: 'Outcome', value: <OutcomeBadge outcome={e.outcome} voided={e.voided} /> },

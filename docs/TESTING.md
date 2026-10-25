@@ -3,9 +3,19 @@
 ## How to run
 
 ```bash
-npm test             # 101 API & business-logic tests (Vitest + Supertest, in-memory SQLite, frozen clock)
+npm test             # 107 API & business-logic tests (Vitest + Supertest, in-memory SQLite, frozen clock)
 npm run typecheck    # server + client TypeScript
 npm run build && npm run e2e   # browser smoke test at desktop/tablet/mobile widths (Playwright + Chromium)
+```
+
+Browser edition (see [BROWSER_EDITION.md](BROWSER_EDITION.md)):
+
+```bash
+npx vitest run -c vitest.browser.config.ts   # the same 107 server tests through the browser stack (sql.js, Express shim, noble crypto)
+npx vitest run -c vitest.sqljs.config.ts     # server tests + 77 tests comparing the sql.js wrapper with native better-sqlite3
+npx vitest run -c vitest.shims.config.ts     # server tests + 84 Express/cookie/supertest shim tests
+npx vitest run -c vitest.crypto.config.ts    # 16 tests cross-checking the browser crypto against node:crypto
+npm run build:browser && npm run e2e:browser # Chromium smoke test of the single-file build (normal and strict CSP)
 ```
 
 Tests run against a fresh in-memory database seeded with the synthetic dataset and a frozen clock (`2026-10-24 11:30 IST`), so time-based rules (expiry, overdue, session timeout) are tested deterministically by advancing the clock.
@@ -67,6 +77,8 @@ An independent reviewer (separate from the implementation) audited every route a
 | Audit history of location-less records visible to location-scoped users | Restricted to all-location users |
 | Location administrators could change shared contractor organizations used at other locations | Refused unless the organization is used only within the actor's locations |
 | Demo scanner samples were not scoped to the gate's location | Samples drawn from the gate's location (the deliberate wrong-location sample excepted) |
+
+A later review of the browser edition's crypto port found that `verifyPassword` accepted any password for a stored hash whose key part was empty (scrypt with key length 0 compares two empty buffers as equal). Both implementations now reject it (`security-regressions.test.ts` › *password hashes*). The same review round added fixed 4xx answers for malformed requests and made *Mark arrived* idempotent (`browser-review-fixes.test.ts`).
 
 Also hardened: temporary access holders, delivery recipients/sponsors, exception owners and handover recipients must be within the relevant location; linked subjects on movements are validated; QR tokens presented in the wrong mode are masked before storage. SQL injection, read-only role enforcement, gate operator binding, session handling and append-only storage were reviewed and found sound.
 

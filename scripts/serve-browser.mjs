@@ -7,6 +7,7 @@
 // Options: --port <n>   --csp strict   (strict = no eval/WebAssembly, no network; exercises the asm.js fallback)
 //          --dir <folder>   (default dist/browser)
 import http from 'node:http';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -20,6 +21,20 @@ const csp = opt('csp', 'none');
 
 const dir = path.resolve(opt('dir', 'dist/browser'));
 const content = fs.readFileSync(path.join(dir, 'securegate.html'), 'utf8');
+
+// Say which build is being served, and warn when it is not the checked-out commit.
+const stamp = /<!-- sg-build commit=(\S+) dirty=(yes|no) built=(\S+) -->/.exec(content);
+let head = null;
+try {
+  head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+} catch {
+  /* not a git checkout */
+}
+if (!stamp) console.warn('Warning: this file carries no build stamp; rebuild with npm run build:browser.');
+else {
+  console.log(`Serving build ${stamp[1]}${stamp[2] === 'yes' ? ' (uncommitted changes)' : ''}, built ${stamp[3]}`);
+  if (head && !head.startsWith(stamp[1])) console.warn(`Warning: built from ${stamp[1]}, but HEAD is ${head.slice(0, 7)}; rebuild with npm run build:browser.`);
+}
 export const page =
   '<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover">' +
   '<style>*,*::before,*::after{box-sizing:border-box}html,body{margin:0;padding:0}</style></head><body>' +

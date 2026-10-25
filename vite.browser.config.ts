@@ -49,6 +49,8 @@ export default defineConfig({
   },
   define: {
     'import.meta.env.VITE_SG_EDITION': JSON.stringify('browser'),
+    // scripts/build-browser.mjs replaces this with the real stamp (git commit, dirty tree, build time).
+    __SG_BUILD__: JSON.stringify({ commit: 'unknown', dirty: true, builtAt: new Date().toISOString() }),
   },
   build: {
     outDir: '../dist/browser-build',

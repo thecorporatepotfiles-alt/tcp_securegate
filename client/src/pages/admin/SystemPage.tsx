@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { AlertTriangle, Cpu, PlayCircle, RefreshCw, ShieldCheck } from 'lucide-react';
 import { api } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
+import { BROWSER_EDITION, serverCopy } from '../../lib/edition';
 import { fmtDateTime, titleCase } from '../../lib/format';
 import type { Row } from '../../lib/types';
 import { useAction } from '../../components/toast';
@@ -49,7 +50,7 @@ export default function SystemPage() {
   return (
     <>
       <PageHeader title="System & demo" subtitle="Runtime information, maintenance actions and the simulated integration boundary." />
-      <div className="grid gap-5 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         <Card>
           <CardHeader title="Environment" />
           <KeyValue
@@ -97,7 +98,10 @@ export default function SystemPage() {
           <Card>
             <CardHeader
               title="Audit trail integrity"
-              subtitle="Each audit record is hash-chained to the previous one; tampering breaks the chain."
+              subtitle={serverCopy(
+                'Each audit record is hash-chained to the previous one; the check reports the first break in the chain.',
+                'Each audit record is hash-chained to the previous one. Here this is a demonstration: the data lives in this browser, where it can be changed.',
+              )}
               actions={
                 <Button icon={<ShieldCheck className="size-4" />} loading={verify.isFetching} onClick={() => verify.refetch()}>
                   Verify chain
@@ -106,8 +110,9 @@ export default function SystemPage() {
             />
             {verify.data ? (
               verify.data.ok ? (
-                <Notice tone="success" title="Chain intact">
-                  {verify.data.checked.toLocaleString('en-IN')} audit records verified.
+                <Notice tone="success" title="No break in the chain">
+                  {verify.data.checked.toLocaleString('en-IN')} audit records match their hash chain.
+                  {BROWSER_EDITION && ' Data in this browser can be changed by anyone with access to it, so this only demonstrates the mechanism.'}
                 </Notice>
               ) : (
                 <Notice tone="danger" title="Chain broken">
@@ -117,7 +122,12 @@ export default function SystemPage() {
             ) : verify.isError ? (
               <Notice tone="danger">{(verify.error as Error).message}</Notice>
             ) : (
-              <p className="text-sm text-ink-3">Audit records cannot be edited or deleted by any user; the database rejects updates and deletes.</p>
+              <p className="text-sm text-ink-3">
+                {serverCopy(
+                  'Audit records cannot be edited or deleted through the application; the database rejects updates and deletes.',
+                  'Audit records cannot be edited or deleted through the application, but the stored data itself is in this browser and is not protected.',
+                )}
+              </p>
             )}
           </Card>
         )}

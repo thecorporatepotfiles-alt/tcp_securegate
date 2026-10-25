@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { CreditCard, Plus } from 'lucide-react';
 import { api } from '../lib/api';
+import { serverCopy } from '../lib/edition';
 import { fmtDateTime } from '../lib/format';
 import type { Row } from '../lib/types';
 import { CREDENTIAL_TYPES, CREDENTIAL_TYPE_LABEL } from '../../../shared/constants';
@@ -63,7 +64,7 @@ export function AssignCredentialModal({ open, onClose, holderType, holderId, inv
         <Input label={temporary ? 'Valid until' : 'Valid until (optional)'} type="datetime-local" required={temporary} value={validUntil} onChange={(e) => setValidUntil(e.target.value)} />
         <Textarea label="Note (optional)" value={reason} onChange={(e) => setReason(e.target.value)} rows={2} />
         <p className="text-xs text-ink-3">
-          <SimulatedTag /> Personal details stay in the protected database; the credential carries only this number.
+          <SimulatedTag /> {serverCopy('Personal details stay in the protected database', 'Personal details stay in the SecureGate database')}; the credential carries only this number.
         </p>
       </div>
     </Modal>

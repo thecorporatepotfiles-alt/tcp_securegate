@@ -5,7 +5,7 @@
   --sg-splash-line: #e4e2d9;
   --sg-splash-ink: #16201b;
   --sg-splash-ink-2: #4a544e;
-  --sg-splash-ink-3: #78807b;
+  --sg-splash-ink-3: #5f6762; /* 5.8:1 on the card, 5.2:1 on the page background */
   --sg-splash-brand: #173226;
   --sg-splash-brand-ink: #f1f7f3;
   --sg-splash-accent: #b8913f;
@@ -127,6 +127,9 @@
 .sg-step.is-done::before {
   border-color: var(--sg-splash-ok);
   background: var(--sg-splash-ok);
+}
+.sg-step.is-skipped::before {
+  border-style: dashed;
 }
 .sg-splash-note {
   margin: 18px 0 0;

@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useId, useMemo, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Plus, RotateCcw, Save, Trash2 } from 'lucide-react';
 import { api } from '../../lib/api';
+import { serverCopy } from '../../lib/edition';
 import {
   ALERT_SEVERITIES,
   ALERT_TYPES,
@@ -47,6 +48,11 @@ const META: Record<string, { label: string; kind: Kind; min?: number; max?: numb
   'exceptions.unresolvedHours': { label: 'Unresolved exception alert after', kind: 'number', min: 1, max: 720, unit: 'hours' },
 };
 
+/** Descriptions come from the server's settings catalogue; in the browser edition those rules run inside this page. */
+function settingDescription(text: string): string {
+  return serverCopy(text, text.replace('(server-enforced)', "(enforced by SecureGate's rules running in this page)"));
+}
+
 const SECTIONS: { id: string; label: string; keys: string[] }[] = [
   { id: 'visitors', label: 'Visitor workflow', keys: ['visit.requireSecurityCheck', 'visit.allowSelfApproval', 'visit.passSingleUse', 'visit.passEarlyMinutes', 'visit.passGraceMinutes', 'visit.overstayGraceMinutes', 'visit.transitions'] },
   { id: 'deliveries', label: 'Delivery workflow', keys: ['delivery.requireAuthorization', 'delivery.ackOverdueHours', 'delivery.categories', 'delivery.transitions'] },
@@ -63,7 +69,7 @@ export default function SettingsPage() {
     <>
       <PageHeader
         title="Workflow settings"
-        subtitle="Configurable rules enforced by the server. Defaults are safe demonstration values, not operational policy — the establishment must approve final settings."
+        subtitle={`${serverCopy('Configurable rules enforced by the server.', "Configurable rules applied by SecureGate's server code running in this page.")} Defaults are safe demonstration values, not operational policy — the establishment must approve final settings.`}
       />
       <Tabs value={section} onChange={setSection} tabs={SECTIONS.map((s) => ({ value: s.id, label: s.label }))} />
       {q.isLoading ? (
@@ -71,7 +77,7 @@ export default function SettingsPage() {
       ) : q.isError ? (
         <ErrorState error={q.error} onRetry={() => q.refetch()} />
       ) : (
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           {SECTIONS.find((s) => s.id === section)!
             .keys.map((k) => byKey.get(k))
             .filter((s): s is SettingRow => !!s)
@@ -86,6 +92,7 @@ export default function SettingsPage() {
 
 function SettingEditor({ setting }: { setting: SettingRow }) {
   const meta = META[setting.key] ?? { label: setting.key, kind: 'number' as Kind };
+  const id = useId();
   const [draft, setDraft] = useState<unknown>(setting.value);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => setDraft(setting.value), [setting.value]);
@@ -118,8 +125,12 @@ function SettingEditor({ setting }: { setting: SettingRow }) {
     <Card className={cx('min-w-0', wide && 'lg:col-span-2')}>
       <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="text-[15px] font-semibold text-ink">{meta.label}</h3>
-          <p className="mt-0.5 text-[13px] text-ink-3">{setting.description}</p>
+          <h3 id={`${id}-label`} className="text-[15px] font-semibold text-ink">
+            {meta.label}
+          </h3>
+          <p id={`${id}-desc`} className="mt-0.5 text-[13px] text-ink-3">
+            {settingDescription(setting.description)}
+          </p>
           <p className="mt-0.5 font-mono text-[11px] text-ink-3">{setting.key}</p>
         </div>
         {meta.kind !== 'bool' && (
@@ -146,7 +157,16 @@ function SettingEditor({ setting }: { setting: SettingRow }) {
       </div>
       {error && <Notice tone="danger" className="mb-3">{error}</Notice>}
       {meta.kind === 'bool' && (
-        <BoolEditor value={draft as boolean} saving={save.isPending} onChange={(v) => { setDraft(v); save.mutate(v); }} />
+        <BoolEditor
+          labelledBy={`${id}-label`}
+          describedBy={`${id}-desc`}
+          value={draft as boolean}
+          saving={save.isPending}
+          onChange={(v) => {
+            setDraft(v);
+            save.mutate(v);
+          }}
+        />
       )}
       {meta.kind === 'number' && (
         <div className="flex items-center gap-2">
@@ -167,7 +187,7 @@ function SettingEditor({ setting }: { setting: SettingRow }) {
           label={(s) => (setting.key.startsWith('visit') ? VISIT_STATUS_INFO[s as keyof typeof VISIT_STATUS_INFO]?.label : DELIVERY_STATUS_INFO[s as keyof typeof DELIVERY_STATUS_INFO]?.label) ?? s}
           note={
             setting.key.startsWith('visit')
-              ? 'Inside / Exited / Overdue are only reached through recorded gate events and authorized corrections; Approved only through an approval decision. Removing a transition blocks the matching action on the server.'
+              ? `Inside / Exited / Overdue are only reached through recorded gate events and authorized corrections; Approved only through an approval decision. Removing a transition blocks the matching action ${serverCopy('on the server', 'in SecureGate')}.`
               : 'Each delivery action still checks its own preconditions (for example, receipt can only be acknowledged once authorized).'
           }
         />
@@ -176,20 +196,24 @@ function SettingEditor({ setting }: { setting: SettingRow }) {
   );
 }
 
-function BoolEditor({ value, onChange, saving }: { value: boolean; onChange: (v: boolean) => void; saving: boolean }) {
+/** The switch is named by its card's heading and described by the card's description (both visible). */
+function BoolEditor({ value, onChange, saving, labelledBy, describedBy }: { value: boolean; onChange: (v: boolean) => void; saving: boolean; labelledBy: string; describedBy: string }) {
   return (
     <div className="flex items-center gap-3">
       <button
         type="button"
         role="switch"
         aria-checked={value}
+        aria-labelledby={labelledBy}
+        aria-describedby={describedBy}
         disabled={saving}
         onClick={() => onChange(!value)}
         className={cx('relative h-6 w-11 shrink-0 rounded-full transition-colors disabled:opacity-60', value ? 'bg-forest-600' : 'bg-line-strong')}
       >
-        <span className={cx('absolute top-0.5 left-0.5 size-5 rounded-full bg-white shadow transition-transform', value && 'translate-x-5')} />
+        <span aria-hidden className={cx('absolute top-0.5 left-0.5 size-5 rounded-full bg-white shadow transition-transform', value && 'translate-x-5')} />
       </button>
-      <span className="text-sm font-medium text-ink">{value ? 'Enabled' : 'Disabled'}</span>
+      {/* aria-checked already conveys the state. */}
+      <span aria-hidden className="text-sm font-medium text-ink">{value ? 'Enabled' : 'Disabled'}</span>
       <span className="text-xs text-ink-3">Saved immediately</span>
     </div>
   );

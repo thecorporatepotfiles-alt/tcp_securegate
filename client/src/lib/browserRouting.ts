@@ -1,5 +1,5 @@
-import { useEffect, useRef } from 'react';
-import { useLocation, useNavigate, useNavigationType } from 'react-router-dom';
+import { useCallback, useEffect, useRef } from 'react';
+import { useBlocker, useLocation, useNavigate, useNavigationType, type BlockerFunction } from 'react-router-dom';
 import { BROWSER_EDITION } from './edition';
 
 /**
@@ -100,5 +100,31 @@ export function useGoBack(fallback: string): () => void {
   return () => {
     if (BROWSER_EDITION && historyDepth === 0) navigate(fallback);
     else navigate(-1);
+  };
+}
+
+/**
+ * Unsaved-changes guard for a page. While `dirty`, in-app navigation to another page (links, notifications,
+ * `#/path`, `__sgNavigate`, sign-out, Back) is held until the page answers its own confirmation: render it
+ * while `blocked`, then call `stay()` or `leave()`. In the standard edition reloading or closing the tab also
+ * raises the browser's prompt; the browser edition's frame suppresses native dialogs, so it is not used there.
+ * Needs the data router set up in main.tsx; a router holds one guard at a time.
+ */
+export function useUnsavedChangesGuard(dirty: boolean): { blocked: boolean; stay: () => void; leave: () => void } {
+  const shouldBlock = useCallback<BlockerFunction>(({ currentLocation, nextLocation }) => dirty && currentLocation.pathname !== nextLocation.pathname, [dirty]);
+  const blocker = useBlocker(shouldBlock);
+  useEffect(() => {
+    if (!dirty || BROWSER_EDITION) return;
+    const warn = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = ''; // older browsers only prompt when this is set
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [dirty]);
+  return {
+    blocked: blocker.state === 'blocked',
+    stay: () => blocker.state === 'blocked' && blocker.reset(),
+    leave: () => blocker.state === 'blocked' && blocker.proceed(),
   };
 }

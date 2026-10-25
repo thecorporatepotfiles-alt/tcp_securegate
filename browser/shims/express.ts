@@ -1635,11 +1635,17 @@ export function json(options: JsonOptions = {}): RequestHandler {
     if (charset.slice(0, 4) !== 'utf-') {
       return next(httpError(415, `unsupported charset "${charset.toUpperCase()}"`, { charset, type: 'charset.unsupported' }));
     }
+    const raw = rawBodies.get(req) ?? '';
     const encoding = String(req.headers['content-encoding'] ?? 'identity').toLowerCase();
+    if (encoding === 'gzip' || encoding === 'deflate' || encoding === 'br') {
+      // Node inflates these. Bodies reach the shim as text, which is never a valid compressed
+      // stream, so fail as Node's inflate does on such a body (400, no error type).
+      const message = encoding === 'br' ? 'Decompression failed' : raw ? 'incorrect header check' : 'unexpected end of file';
+      return next(httpError(400, message));
+    }
     if (encoding !== 'identity') {
       return next(httpError(415, `unsupported content encoding "${encoding}"`, { encoding, type: 'encoding.unsupported' }));
     }
-    const raw = rawBodies.get(req) ?? '';
     const length = byteLength(raw);
     const declared = Number.parseInt(String(req.headers['content-length']), 10);
     if (length > limit || (!Number.isNaN(declared) && declared > limit)) {

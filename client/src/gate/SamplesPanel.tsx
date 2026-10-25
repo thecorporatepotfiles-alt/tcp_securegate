@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { CreditCard, ScanLine } from 'lucide-react';
 import { api, ApiError } from '../lib/api';
+import { serverCopy } from '../lib/edition';
 import type { GateMode } from '../../../shared/constants';
 import { SimulatedTag } from '../components/status';
 import { cx } from '../components/ui';
@@ -44,7 +45,10 @@ export function SamplesPanel({ gateId, mode, onPick, disabled, variant = 'scanne
         <h3 className="text-[15px] font-semibold text-white">{variant === 'reader' ? 'Mock reader — tap a sample card' : 'Simulated scanner — demo passes'}</h3>
         <SimulatedTag>Demo only</SimulatedTag>
       </div>
-      <p className="mb-3 text-xs text-forest-200/70">Synthetic samples to demonstrate each verification outcome. The server performs the real check; nothing here bypasses it.</p>
+      <p className="mb-3 text-xs text-forest-200/70">
+        Synthetic samples to demonstrate each verification outcome.{' '}
+        {serverCopy('The server performs the real check; nothing here bypasses it.', "SecureGate's verification rules perform the real check; nothing here bypasses them.")}
+      </p>
       <div className="grid gap-2 sm:grid-cols-2">
         {samples.map((s) => (
           <button

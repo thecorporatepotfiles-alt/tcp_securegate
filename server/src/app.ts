@@ -100,6 +100,25 @@ export function createApp({ db, config }: AppDeps) {
       res.status(409).json({ error: { code: 'CONSTRAINT', message: 'The change conflicts with existing records. Refresh and try again.' } });
       return;
     }
+    if (e?.type === 'charset.unsupported' || e?.type === 'encoding.unsupported') {
+      res.status(415).json({ error: { code: 'UNSUPPORTED_MEDIA_TYPE', message: 'Request bodies must be UTF-8 JSON without a content encoding.' } });
+      return;
+    }
+    // Other client errors raised below the routes: a malformed %-escape in the path or a body that
+    // cannot be decoded (400), or a client file that cannot be served as asked (404, 412, 416).
+    // Keep their status, but reply with a fixed message (theirs can echo raw request input) and do
+    // not log them as server faults. The type is set explicitly because sendFile may already have
+    // labelled the response as the file's.
+    if (typeof e?.status === 'number' && e.status >= 400 && e.status < 500) {
+      const error =
+        e.status === 400
+          ? { code: 'BAD_REQUEST', message: 'The request could not be understood.' }
+          : e.status === 404
+            ? { code: 'NOT_FOUND', message: 'Not found' }
+            : { code: 'REQUEST_REJECTED', message: 'The request could not be completed.' };
+      res.status(e.status).type('application/json').json({ error });
+      return;
+    }
     console.error('[api] unhandled error', err);
     res.status(500).json({ error: { code: 'INTERNAL', message: 'An unexpected error occurred.' } });
   });

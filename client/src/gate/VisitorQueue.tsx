@@ -111,7 +111,8 @@ export function VisitorQueue() {
                 </div>
               </div>
               <div className="mt-3 flex flex-wrap items-center gap-2">
-                {(v.status === 'EXPECTED' || v.status === 'APPROVED') && (
+                {/* Arrival is recorded once: an approved visit that has arrived (every walk-in) only needs verifying. */}
+                {(v.status === 'EXPECTED' || (v.status === 'APPROVED' && !v.arrivedAt)) && (
                   <GateButton loading={busy === v.id} onClick={() => arrive(v)}>
                     Mark arrived{v.status === 'APPROVED' ? ' & notify host' : ''}
                   </GateButton>
@@ -128,6 +129,7 @@ export function VisitorQueue() {
                 )}
                 {WAIT_TEXT[v.status] && <span className="text-sm text-gold-300">{WAIT_TEXT[v.status]}</span>}
                 {v.status === 'EXPECTED' && <span className="text-sm text-forest-200/70">Not yet authorized — entry not permitted.</span>}
+                {v.status === 'APPROVED' && v.arrivedAt && <span className="text-sm text-forest-200/70">Arrival recorded — verify by reference to admit.</span>}
               </div>
             </li>
           ))}

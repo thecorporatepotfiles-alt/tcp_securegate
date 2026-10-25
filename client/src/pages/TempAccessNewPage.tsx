@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ApiError, api } from '../lib/api';
+import { serverCopy } from '../lib/edition';
 import { useGoBack } from '../lib/browserRouting';
 import { useLocationScope } from '../lib/location';
 import { addDaysStr, nowLocalTime, todayLocal, zonedIso } from '../lib/format';
@@ -90,7 +91,7 @@ export default function TempAccessNewPage() {
       <PageHeader
         back={{ to: '/temporary-access', label: 'Temporary access' }}
         title="Issue temporary access"
-        subtitle="Generates a time-limited QR pass for one location. It is verified by the server at the gate and expires automatically."
+        subtitle={`Generates a time-limited QR pass for one location. It is verified ${serverCopy('by the server', "by SecureGate's rules (running in this page)")} at the gate and expires automatically.`}
       />
       <form onSubmit={submit} noValidate className="grid max-w-3xl gap-5">
         {serverError && <Notice tone="danger" title="Not issued">{serverError}</Notice>}

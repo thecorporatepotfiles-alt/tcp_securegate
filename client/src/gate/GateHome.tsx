@@ -110,6 +110,8 @@ export function GateHome() {
 
   return (
     <div className="space-y-5">
+      {/* The tiles are the visual title; screen-reader and heading navigation still need one. */}
+      <h1 className="sr-only">Gate home{home.data ? ` · ${home.data.gate.name}` : ''}</h1>
       {approved.length > 0 && (
         <Link to="/gate/reviews" className="flex items-center gap-3 rounded-2xl border border-[#5fd39a]/40 bg-[#1f8a5f]/20 px-4 py-3 text-white hover:bg-[#1f8a5f]/30">
           <ClipboardList className="size-6 text-[#5fd39a]" aria-hidden />
@@ -136,7 +138,7 @@ export function GateHome() {
       <section aria-label="Location status" className="rounded-2xl border border-white/10 bg-forest-900/70 p-4 sm:p-5">
         <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="text-[13px] font-semibold tracking-[0.12em] text-forest-200/70 uppercase">Recorded inside now · {home.data?.gate.locationName ?? '…'}</h2>
-          {home.data && <span className="text-xs text-forest-200/50">Updated {fmtTime(home.data.generatedAt)} · refreshes every 15 s</span>}
+          {home.data && <span className="text-xs text-forest-200/70">Updated {fmtTime(home.data.generatedAt)} · refreshes every 15 s</span>}
         </div>
         {home.isLoading ? (
           <GateSpinner />

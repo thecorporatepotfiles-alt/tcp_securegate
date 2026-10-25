@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import jsQR from 'jsqr';
 import { Camera, CameraOff, ImageUp } from 'lucide-react';
-import { BROWSER_EDITION } from '../lib/edition';
+import { BROWSER_EDITION, serverCopy } from '../lib/edition';
 import { GateButton, GateError } from './gateUi';
 
 type CamState = 'idle' | 'starting' | 'scanning' | 'unavailable' | 'denied' | 'error';
@@ -73,7 +73,7 @@ export async function decodeQrFromImage(file: Blob): Promise<string | null> {
 /**
  * QR scanner: live camera (jsQR on video frames, HTTPS or localhost) or a
  * photo of the pass. Either way the decoded text goes to `onDetected`, which
- * verifies it with the server — a scan alone never authorizes entry. The
+ * submits it for verification — a scan alone never authorizes entry. The
  * browser edition has no camera access, so it offers the photo path only;
  * manual entry and the simulated scanner remain alongside.
  */
@@ -212,7 +212,8 @@ export function QrScanner({ onDetected, disabled }: { onDetected: (text: string)
           <ImageUp className="size-10 text-gold-400" aria-hidden />
           {photoButton(true)}
           <p className="max-w-sm text-xs text-forest-200/60">
-            Take or choose a photo of the pass QR. The live camera is not available in this browser edition. The code is still checked by the server.
+            Take or choose a photo of the pass QR. The live camera is not available in this browser edition.{' '}
+            {serverCopy('The code is still checked by the server.', "The code is still checked by SecureGate's verification rules (running in this page).")}
           </p>
         </div>
       )}
@@ -249,7 +250,9 @@ export function QrScanner({ onDetected, disabled }: { onDetected: (text: string)
                   <GateButton variant="gold" size="xl" onClick={start} loading={state === 'starting'} disabled={disabled} icon={<Camera className="size-6" />}>
                     Start camera scan
                   </GateButton>
-                  <p className="text-xs text-forest-200/60">Uses this device's camera to read the pass QR. The code is checked by the server.</p>
+                  <p className="text-xs text-forest-200/60">
+                    Uses this device's camera to read the pass QR. {serverCopy('The code is checked by the server.', "The code is checked by SecureGate's verification rules (running in this page).")}
+                  </p>
                 </>
               )}
             </div>

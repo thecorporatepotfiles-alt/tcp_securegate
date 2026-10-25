@@ -3,6 +3,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { ArrowDownLeft, ArrowUpRight, CheckCircle2, Home, Keyboard, ScanLine } from 'lucide-react';
 import { api, errorMessage, ApiError, newIdempotencyKey } from '../lib/api';
+import { serverCopy } from '../lib/edition';
 import { fmtTime } from '../lib/format';
 import type { Row } from '../lib/types';
 import type { GateMode } from '../../../shared/constants';
@@ -202,12 +203,21 @@ function VerifyFlowInner({ mode }: { mode: GateMode }) {
               {showKeypad && (
                 <>
                   <Keypad value={input} onChange={(v) => setInput(v.toUpperCase())} onSubmit={() => verify(input, 'CREDENTIAL')} disabled={verifying} />
-                  <button type="button" className="text-sm text-forest-200/70 underline" onClick={() => setShowKeypad(false)}>
+                  {/* A 48 px target like the other gate controls; unlike GateButton the text may wrap on narrow phones. */}
+                  <button
+                    type="button"
+                    className="-mx-3 inline-flex min-h-12 items-center rounded-xl px-3 text-left text-sm text-forest-200/70 underline underline-offset-2 hover:bg-white/[0.06] hover:text-white"
+                    onClick={() => setShowKeypad(false)}
+                  >
                     Hide keypad (use device keyboard)
                   </button>
                 </>
               )}
-              {verifying && <p className="text-sm text-forest-200/70" role="status">Checking with the server…</p>}
+              {verifying && (
+                <p className="text-sm text-forest-200/70" role="status">
+                  {serverCopy('Checking with the server…', 'Checking…')}
+                </p>
+              )}
             </form>
             <div className="flex flex-wrap items-center gap-2 text-xs text-forest-200/60">
               <SimulatedTag>Simulated verification</SimulatedTag>
@@ -250,7 +260,7 @@ function DoneScreen({ done, onNext, nextLabel }: { done: { event: Row; duplicate
       )}
       <dl className="grid gap-3 rounded-2xl border border-white/10 bg-forest-900 p-5 text-[15px] sm:grid-cols-3">
         <div>
-          <dt className="text-xs text-forest-200/60">Recorded at (server time)</dt>
+          <dt className="text-xs text-forest-200/60">{serverCopy('Recorded at (server time)', 'Recorded at (device time)')}</dt>
           <dd className="text-white">{fmtTime(e.recordedAt)}</dd>
         </div>
         <div>

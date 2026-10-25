@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertTriangle, ArrowDownLeft, ArrowUpRight, CheckCircle2, ClipboardList, Clock, RotateCcw, ScanLine, ShieldX, XCircle } from 'lucide-react';
 import { api, errorMessage } from '../lib/api';
+import { serverCopy } from '../lib/edition';
 import { fmtRelative, fmtTime } from '../lib/format';
 import type { Row } from '../lib/types';
 import { VERIFICATION_METHOD_LABEL, type GateMode, type ResultCode, type SubjectType, type Tone, type VerificationMethod } from '../../../shared/constants';
@@ -196,7 +197,9 @@ export function ResultPanel({
               <GateError>{recordError}</GateError>
             </div>
           )}
-          <p className="mt-3 text-xs text-forest-200/60">Nothing is recorded until you confirm. The server re-checks the record before saving.</p>
+          <p className="mt-3 text-xs text-forest-200/60">
+            Nothing is recorded until you confirm. {serverCopy('The server re-checks the record before saving.', 'SecureGate re-checks the record before saving.')}
+          </p>
         </div>
       )}
 
@@ -265,7 +268,7 @@ export function ResultPanel({
           Verify this again
         </GateButton>
       </div>
-      <p className="text-center text-xs text-forest-200/50">
+      <p className="text-center text-xs text-forest-200/60">
         Verification attempt #{result.attemptId} · {result.gate.name}, {result.gate.locationName}
       </p>
     </div>

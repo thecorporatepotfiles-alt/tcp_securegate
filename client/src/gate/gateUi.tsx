@@ -5,7 +5,8 @@ import { cx } from '../components/ui';
 
 /**
  * Dark, touch-first primitives for the gate interface. Targets are at least
- * 56px tall so they can be operated with gloves or on a wall-mounted tablet.
+ * 48px (size md; lg and xl are 56px and 64px) so they can be operated with
+ * gloves or on a wall-mounted tablet.
  */
 
 type Variant = 'gold' | 'solid' | 'ghost' | 'success' | 'danger' | 'info';
@@ -64,7 +65,7 @@ export function SectionTitle({ children, action }: { children: ReactNode; action
   );
 }
 
-const FIELD = 'w-full rounded-xl border border-white/15 bg-forest-950/70 px-4 text-white placeholder:text-forest-200/40 focus:border-gold-400 focus:outline-none focus:ring-2 focus:ring-gold-400/30 disabled:opacity-50';
+const FIELD = 'w-full rounded-xl border border-white/15 bg-forest-950/70 px-4 text-white placeholder:text-forest-200/60 focus:border-gold-400 focus:outline-none focus:ring-2 focus:ring-gold-400/30 disabled:opacity-50';
 
 export function GateLabel({ htmlFor, children, required }: { htmlFor?: string; children: ReactNode; required?: boolean }) {
   return (

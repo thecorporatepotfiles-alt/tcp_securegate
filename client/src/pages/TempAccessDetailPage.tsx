@@ -64,7 +64,7 @@ export default function TempAccessDetailPage() {
           Validity ended {fmtDateTime(t.validUntil)}. The pass is rejected at the gate; an exit can still be recorded for someone already inside.
         </Notice>
       )}
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_400px]">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_400px]">
         <div className="no-print grid content-start gap-5">
           <Card>
             <CardHeader title="Access details" />

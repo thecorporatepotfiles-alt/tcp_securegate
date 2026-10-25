@@ -5,7 +5,7 @@
  */
 import './early.js';
 import './splash.css';
-import { bootBrowserBackend, type BootStep } from './backend/host.js';
+import { bootBrowserBackend, type BootStep, type SupersededInfo } from './backend/host.js';
 import '../client/src/main.tsx';
 
 const STEPS: { key: BootStep; label: string }[] = [
@@ -49,12 +49,18 @@ function renderSplash() {
   return list;
 }
 
+const reached = new Set<BootStep>();
+
 function markStep(list: HTMLElement, step: BootStep) {
+  reached.add(step);
   const keys = STEPS.map((s) => s.key);
   const idx = keys.indexOf(step);
   list.querySelectorAll<HTMLLIElement>('li').forEach((li) => {
-    const i = keys.indexOf(li.dataset.step as BootStep);
-    li.classList.toggle('is-done', i < idx);
+    const key = li.dataset.step as BootStep;
+    const i = keys.indexOf(key);
+    // A step that was not needed (no dataset to generate after a restore) is shown as skipped, not done.
+    li.classList.toggle('is-done', i < idx && reached.has(key));
+    li.classList.toggle('is-skipped', i < idx && !reached.has(key));
     li.classList.toggle('is-active', i === idx);
   });
 }
@@ -85,8 +91,8 @@ function renderFailure(err: unknown) {
   overlay.replaceChildren(wrap);
 }
 
-/** Another tab took over the shared demo data: this tab saved and stopped. */
-function renderSuperseded() {
+/** Another tab took over the shared demo data: this tab has stopped. */
+function renderSuperseded({ changedHere, unsavedChanges }: SupersededInfo) {
   const wrap = el('div', 'sg-splash');
   wrap.setAttribute('role', 'alertdialog');
   wrap.setAttribute('aria-labelledby', 'sg-superseded-title');
@@ -96,7 +102,11 @@ function renderSuperseded() {
   const msg = el(
     'p',
     'sg-splash-sub',
-    'The demo data on this device is used by one tab at a time. Your changes in this tab were saved before the other tab took over.',
+    unsavedChanges
+      ? 'The demo data on this device is used by one tab at a time. The other tab took over before this tab could save, so the most recent changes made here may not have been kept.'
+      : changedHere
+        ? 'The demo data on this device is used by one tab at a time. Changes made in this tab were saved before the other tab took over.'
+        : 'The demo data on this device is used by one tab at a time, and the other tab is using it now. No changes had been made in this tab.',
   );
   const btn = el('button', 'sg-splash-btn', 'Use SecureGate in this tab');
   btn.type = 'button';

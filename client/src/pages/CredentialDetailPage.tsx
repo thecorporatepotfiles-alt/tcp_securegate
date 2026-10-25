@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
+import { serverCopy } from '../lib/edition';
 import { fmtDateTime, titleCase } from '../lib/format';
 import type { Row } from '../lib/types';
 import { CREDENTIAL_TYPE_LABEL, type CredentialStatus, type CredentialType } from '../../../shared/constants';
@@ -102,7 +103,8 @@ export default function CredentialDetailPage() {
         <Card>
           <CardHeader title="Future RFID/NFC readers" subtitle={<SimulatedTag>Simulated in this prototype</SimulatedTag>} />
           <p className="text-sm leading-relaxed text-ink-2">
-            The credential stores only an opaque number. Readers approved later would submit that number to the same server-side verification service used by the gate
+            The credential stores only an opaque number. Readers approved later would submit that number to the same{' '}
+            {serverCopy('server-side verification service', 'verification service (here running in this page)')} used by the gate
             interface, so every rule, alert and audit record applies unchanged. No hardware is connected or claimed to be compatible.
           </p>
         </Card>

@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Lock, Save } from 'lucide-react';
 import { api } from '../../lib/api';
+import { serverCopy } from '../../lib/edition';
+import { useUnsavedChangesGuard } from '../../lib/browserRouting';
 import type { Permission, RoleCode } from '../../../../shared/constants';
 import { useAction } from '../../components/toast';
 import { Badge, Button, Card, CardHeader, Checkbox, ErrorState, Modal, Notice, PageHeader, Pill, Spinner, Tabs } from '../../components/ui';
@@ -49,6 +51,19 @@ export default function RolesPage() {
   const removed = current ? current.permissions.filter((p) => !draft.has(p)) : [];
   const dirty = added.length + removed.length > 0;
 
+  // Leaving the page with unsaved edits (sidebar, notifications, #/path, sign-out, Back) asks first,
+  // with the same confirmation as switching role tabs.
+  const leave = useUnsavedChangesGuard(dirty);
+  const keepEditing = () => {
+    leave.stay();
+    setPendingRole(null);
+  };
+  const discardChanges = () => {
+    if (leave.blocked) leave.leave();
+    else if (pendingRole) setRole(pendingRole);
+    setPendingRole(null);
+  };
+
   const save = useAction(() => api.put<{ added: string[]; removed: string[] }>(`/admin/roles/${role}`, { permissions: [...draft] }), {
     success: (r) => `Permissions saved (${r.added.length} added, ${r.removed.length} removed). Changes apply on the next request.`,
     invalidate: [['admin', 'roles'], ['me']],
@@ -65,7 +80,7 @@ export default function RolesPage() {
     <>
       <PageHeader
         title="Roles & permissions"
-        subtitle="Permissions are enforced by the server on every request. Location scope is applied separately: local roles never gain access to other locations."
+        subtitle={`${serverCopy('Permissions are enforced by the server on every request.', "Permissions are checked by SecureGate's server code, running in this page, on every request.")} Location scope is applied separately: local roles never gain access to other locations.`}
       />
       {!canEdit && <Notice tone="info" className="mb-4">You can view role permissions but not change them.</Notice>}
       <Tabs
@@ -154,22 +169,16 @@ export default function RolesPage() {
         </div>
       )}
       <Modal
-        open={pendingRole !== null}
-        onClose={() => setPendingRole(null)}
+        open={pendingRole !== null || leave.blocked}
+        onClose={keepEditing}
         size="sm"
         title="Discard unsaved permission changes?"
         footer={
           <>
-            <Button data-autofocus onClick={() => setPendingRole(null)}>
+            <Button data-autofocus onClick={keepEditing}>
               Keep editing
             </Button>
-            <Button
-              variant="danger"
-              onClick={() => {
-                if (pendingRole) setRole(pendingRole);
-                setPendingRole(null);
-              }}
-            >
+            <Button variant="danger" onClick={discardChanges}>
               Discard changes
             </Button>
           </>
@@ -185,7 +194,7 @@ export default function RolesPage() {
         footer={
           <>
             <Button onClick={() => setConfirm(false)}>Cancel</Button>
-            <Button variant="primary" loading={save.isPending} onClick={() => save.mutate(undefined)}>
+            <Button variant="primary" loading={save.isPending} disabled={!dirty} onClick={() => save.mutate(undefined)}>
               Save permissions
             </Button>
           </>

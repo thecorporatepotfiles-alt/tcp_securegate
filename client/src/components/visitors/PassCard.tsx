@@ -1,7 +1,7 @@
 import { useRef, useState, type ReactNode } from 'react';
 import { Copy, ImageDown, Printer } from 'lucide-react';
 import { errorMessage } from '../../lib/api';
-import { BROWSER_EDITION, saveFile, useCanSaveFiles } from '../../lib/edition';
+import { BROWSER_EDITION, saveFile, serverCopy, useCanSaveFiles } from '../../lib/edition';
 import { fmtDateTime } from '../../lib/format';
 import { fileSafe, passQrPng } from '../../lib/qrImage';
 import { useToast } from '../toast';
@@ -11,8 +11,8 @@ import { SimulatedTag } from '../status';
 
 /**
  * Printable digital pass with a QR code. The QR holds only an opaque signed
- * token; verification always happens on the server. The QR can also be saved
- * as a PNG (the browser edition cannot print).
+ * token; verification always happens in SecureGate's verification service. The
+ * QR can also be saved as a PNG (the browser edition cannot print).
  */
 export function PassCard({
   kind,
@@ -79,7 +79,9 @@ export function PassCard({
     }
   };
   return (
-    <div>
+    // min-w-0: the pass sits in grid columns whose items default to min-width:auto, so without it the
+    // long test code's nowrap width would set the column (and the page) wider than the viewport.
+    <div className="min-w-0">
       <div className="print-pass mx-auto max-w-md overflow-hidden rounded-2xl border border-line bg-white shadow-[var(--shadow-card)]">
         <div className="flex items-center justify-between gap-3 bg-forest-900 px-5 py-4 text-white">
           <div className="flex items-center gap-2.5">
@@ -116,7 +118,9 @@ export function PassCard({
           </div>
         )}
         <div className="border-t border-line px-5 py-3 text-[11px] leading-snug text-ink-3">
-          Present this code at the gate. A scan alone does not authorize entry — the gate verifies it with the server and records entry only after confirmation. Synthetic demonstration pass; not valid at any real facility.
+          Present this code at the gate. A scan alone does not authorize entry —{' '}
+          {serverCopy('the gate verifies it with the server', "the gate checks it against SecureGate's rules (running in this page)")} and records entry only after confirmation. Synthetic demonstration
+          pass; not valid at any real facility.
         </div>
         {footer}
       </div>
@@ -141,7 +145,8 @@ export function PassCard({
         <div className="no-print mx-auto mt-2 max-w-md">
           <Notice tone="info" title="Opaque pass code (demo testing only)">
             <div className="mt-1 flex items-center gap-2">
-              <code ref={codeRef} className={cx('min-w-0 flex-1 rounded bg-white px-2 py-1 font-mono text-[11px] text-ink-2', copy === 'manual' ? 'break-all' : 'truncate')}>
+              {/* w-0 + flex-1: the token's intrinsic (unbroken) width never counts toward the card's width. */}
+              <code ref={codeRef} className={cx('w-0 min-w-0 flex-1 rounded bg-white px-2 py-1 font-mono text-[11px] text-ink-2', copy === 'manual' ? 'break-all' : 'truncate')}>
                 {token}
               </code>
               <Button size="sm" icon={<Copy className="size-3.5" />} onClick={copyCode}>

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ShieldCheck, ShieldX } from 'lucide-react';
 import { api, errorMessage } from '../lib/api';
+import { BROWSER_EDITION } from '../lib/edition';
 import { fmtTime } from '../lib/format';
 import { Button, Notice, PageHeader } from '../components/ui';
 import { ReportView } from '../components/oversight/ReportView';
@@ -46,10 +47,14 @@ export default function AuditPage() {
             }
           />
           {result && (
-            <Notice tone={result.ok ? 'success' : 'danger'} className="no-print mb-4" title={result.ok ? 'Audit chain intact' : 'Audit chain broken'}>
+            <Notice tone={result.ok ? 'success' : 'danger'} className="no-print mb-4" title={result.ok ? 'No break in the audit chain' : 'Audit chain broken'}>
               {result.ok ? (
+                // Claim only what an unkeyed hash chain shows: it cannot prove nothing was removed from the end,
+                // and in the browser edition whoever has the browser can rewrite the whole chain.
                 <>
-                  All {result.checked.toLocaleString('en-IN')} audit records verified against their hash chain at {fmtTime(result.at)}. No record has been altered or removed.
+                  All {result.checked.toLocaleString('en-IN')} audit records match their hash chain (checked at {fmtTime(result.at)}); no break in the chain was found.
+                  {BROWSER_EDITION &&
+                    ' This edition keeps its data in this browser, where anyone with access to the browser can change it, so this check only demonstrates the mechanism.'}
                 </>
               ) : (
                 <span className="inline-flex items-center gap-1.5">

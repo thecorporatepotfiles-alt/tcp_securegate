@@ -20,8 +20,9 @@ export function RecentEvents() {
       ) : q.isError ? (
         <GateError>{errorMessage(q.error)}</GateError>
       ) : (
-        <div className="grid gap-5 lg:grid-cols-2">
-          <section>
+        // grid-cols-1 (minmax(0,1fr)) and min-w-0: the rows' nowrap lines must truncate, not size the track wider than a phone.
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+          <section className="min-w-0">
             <SectionTitle>Recorded movements</SectionTitle>
             {q.data!.events.length === 0 ? (
               <EmptyGate title="No movements recorded at this gate yet" />
@@ -32,7 +33,7 @@ export function RecentEvents() {
                     <span
                       className={cx(
                         'flex size-10 shrink-0 items-center justify-center rounded-full',
-                        e.voided ? 'bg-white/10 text-forest-200/50' : e.eventType === 'ENTRY' ? 'bg-[#1f8a5f]/25 text-[#5fd39a]' : 'bg-[#2a5698]/30 text-[#9dbcf0]',
+                        e.voided ? 'bg-white/10 text-forest-200/70' : e.eventType === 'ENTRY' ? 'bg-[#1f8a5f]/25 text-[#5fd39a]' : 'bg-[#2a5698]/30 text-[#9dbcf0]',
                       )}
                       aria-hidden
                     >
@@ -47,14 +48,14 @@ export function RecentEvents() {
                     </div>
                     <div className="shrink-0 text-right">
                       <div className="text-sm font-semibold text-white tabular-nums">{fmtTime(e.recordedAt)}</div>
-                      <div className="text-[11px] text-forest-200/50">{fmtDate(e.recordedAt)}</div>
+                      <div className="text-[11px] text-forest-200/70">{fmtDate(e.recordedAt)}</div>
                     </div>
                   </li>
                 ))}
               </ul>
             )}
           </section>
-          <section>
+          <section className="min-w-0">
             <SectionTitle>Verification attempts</SectionTitle>
             {q.data!.attempts.length === 0 ? (
               <EmptyGate title="No verification attempts yet" />
@@ -75,7 +76,7 @@ export function RecentEvents() {
                     </div>
                     <div className="shrink-0 text-right">
                       <div className="text-sm font-semibold text-white tabular-nums">{fmtTime(a.createdAt)}</div>
-                      <div className="text-[11px] text-forest-200/50">{fmtDate(a.createdAt)}</div>
+                      <div className="text-[11px] text-forest-200/70">{fmtDate(a.createdAt)}</div>
                     </div>
                   </li>
                 ))}

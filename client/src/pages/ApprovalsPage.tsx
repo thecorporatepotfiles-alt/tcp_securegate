@@ -75,14 +75,15 @@ export default function ApprovalsPage() {
                   {r.createdById === me.user.id ? (
                     <p className="max-w-[260px] shrink-0 text-xs text-ink-3">You created this request; another approving officer must decide it.</p>
                   ) : (
-                  <div className="flex shrink-0 gap-2">
-                    <Button variant="danger" icon={<XCircle className="size-4" />} onClick={() => setTarget({ row: r, kind: 'reject' })}>
-                      Reject
-                    </Button>
-                    <Button variant="primary" icon={<CheckCircle2 className="size-4" />} onClick={() => setTarget({ row: r, kind: 'approve' })}>
-                      Approve
-                    </Button>
-                  </div>
+                    // Same order as every other decision surface: the positive action first.
+                    <div className="flex shrink-0 gap-2">
+                      <Button variant="primary" icon={<CheckCircle2 className="size-4" />} onClick={() => setTarget({ row: r, kind: 'approve' })}>
+                        Approve
+                      </Button>
+                      <Button variant="danger" icon={<XCircle className="size-4" />} onClick={() => setTarget({ row: r, kind: 'reject' })}>
+                        Reject
+                      </Button>
+                    </div>
                   )}
                 </li>
             ))}

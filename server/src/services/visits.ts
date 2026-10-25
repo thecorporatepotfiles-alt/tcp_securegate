@@ -635,7 +635,11 @@ function notifyHostOfArrival(db: DB, actor: Actor, v: VisitRow, gateName: string
     locationId: v.location_id,
     type: 'VISITOR_ARRIVED',
     title: `${name} has arrived at ${gateName}`,
-    body: `Please acknowledge visit ${v.reference}. The visitor is waiting at the gate.`,
+    // An approved visit has nothing left to acknowledge: the guard verifies the pass and records entry.
+    body:
+      v.status === 'APPROVED'
+        ? `Visit ${v.reference} is approved. The visitor is at the gate for pass verification.`
+        : `Please acknowledge visit ${v.reference}. The visitor is waiting at the gate.`,
     link: `/visitors/${v.id}`,
     relatedType: 'visit',
     relatedId: v.id,
@@ -648,7 +652,7 @@ export function markArrived(ctx: Ctx, id: number, body: unknown) {
   const { db, actor } = ctx;
   return db.transaction(() => {
     const gate = loadGate(ctx, gateId);
-    const v = db.prepare('SELECT * FROM visits WHERE id = ? AND organization_id = ?').get(id, actor.orgId) as VisitRow | undefined;
+    const v = db.prepare('SELECT * FROM visits WHERE id = ? AND organization_id = ?').get(id, actor.orgId) as (VisitRow & { arrived_at: string | null }) | undefined;
     if (!v || v.location_id !== gate.location_id) throw notFound('Visit');
     const now = clock.nowIso();
     if (v.status === 'EXPECTED') {
@@ -656,7 +660,10 @@ export function markArrived(ctx: Ctx, id: number, body: unknown) {
       setVisitStatus(db, actor, v, 'HOST_NOTIFIED', 'Host notified in-app');
       notifyHostOfArrival(db, actor, v, gate.name);
     } else if (v.status === 'APPROVED') {
-      db.prepare('UPDATE visits SET arrived_at = COALESCE(arrived_at, ?), arrived_gate_id = COALESCE(arrived_gate_id, ?), updated_at = ? WHERE id = ?').run(now, gate.id, now, id);
+      // Arrival is recorded once (walk-ins are registered on arrival): repeating it must not
+      // notify the host or write the audit trail again.
+      if (v.arrived_at) return gateVisitSummary(db, id);
+      db.prepare('UPDATE visits SET arrived_at = ?, arrived_gate_id = ?, updated_at = ? WHERE id = ?').run(now, gate.id, now, id);
       notifyHostOfArrival(db, actor, v, gate.name);
     } else {
       throw unprocessable(`Visit is ${VISIT_STATUS_INFO[v.status].label.toLowerCase()}; arrival cannot be recorded.`, 'INVALID_TRANSITION');
